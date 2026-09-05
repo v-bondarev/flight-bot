@@ -37,7 +37,8 @@ CODES = {"СУ": "SU", "ФВ": "FV", "ДР": "DP", "ДП": "DP", "ЮТ": "UT", "
          "У6": "U6", "Н4": "N4", "ЕО": "EO", "ВИ": "VI", "ЯК": "R3", "ИЖ": "I8"}
 CYR = str.maketrans("АВЕКМНОРСТУХ", "ABEKMHOPCTYX")
 
-_ROW_RE = re.compile(r'<a class="timetable__row"[^>]*href="[^"]*?(\d+)"[^>]*>(.*?)</a>', re.S)
+# Строки вылета — class="timetable__row", прилёта — "timetable__row _arrival".
+_ROW_RE = re.compile(r'<a class="timetable__row(?: [^"]*)?"[^>]*href="[^"]*?(\d+)"[^>]*>(.*?)</a>', re.S)
 _HHMM = re.compile(r"(\d{1,2}):(\d{2})")
 
 
@@ -86,7 +87,12 @@ def _minutes_before(plan: Optional[str], boarding_at: Optional[str]) -> str:
 
 
 def direction_of(page: str) -> str:
-    return "arrival" if re.search(r'_time"><span class="visible-lg">\s*Время прил', page) else "departure"
+    """Направление страницы: заголовок колонки, класс строк или подпись ячейки времени."""
+    if (re.search(r'_time"><span class="visible-lg">\s*Время прил', page)
+            or 'class="timetable__row _arrival"' in page
+            or 'title="Время прилета"' in page):
+        return "arrival"
+    return "departure"
 
 
 def parse_board(page: str, today: date) -> List[Dict]:
@@ -125,7 +131,7 @@ def build(row: Dict, direction: str, flight: str) -> FlightSnapshot:
     st = _DESKS_RE.sub("", row["status"]).strip()
     low = st.lower()
     est = fact = None
-    if "вылетел" in low or "прибыл" in low or "приземлил" in low:
+    if any(k in low for k in ("вылетел", "прилетел", "прибыл", "приземлил")):
         fact = _at(day, st) or plan
     elif "задерж" in low or "ожида" in low:
         est = _at(day, st)

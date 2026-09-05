@@ -52,6 +52,17 @@ def test_departure_snapshot_and_status_phases():
     assert by_status["Посадка с 20:55"].boarding.start_min == "40"  # вылет 21:35 − посадка 20:55
 
 
+def test_arrival_board_rows_and_codeshare():
+    page = (Path(__file__).parent / "fixtures" / "vko_board_arrival.html").read_text(encoding="utf-8")
+    assert vko.direction_of(page) == "arrival"
+    s = vko.parse(page, "SU6181", TODAY)[0]                # кодшер «СУ 6181» у «ФВ 6181»
+    assert (s.origin_iata, s.origin_city, s.dest_iata, s.direction) == ("LED", "Санкт-Петербург", "VKO", "arrival")
+    assert s.arrival.plan == "2026-09-05T20:35:00+03:00"
+    assert s.airline == "Россия"
+    landed = [vko.build(r, "arrival", "X") for r in vko.parse_board(page, TODAY) if "Прилетел" in r["status"]]
+    assert landed and landed[0].arrival.fact                # «Прилетел в HH:MM» → факт
+
+
 def test_status_times_become_fact_or_estimate():
     row = dict(id="1", time="21:20", date="2026-09-05", city="Сочи", iata="AER", numbers=["DP1"],
                raw_number="DP 1", airline="Победа", terminal="A", gate="", status="Вылетел в 21:32")
