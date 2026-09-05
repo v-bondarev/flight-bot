@@ -56,6 +56,7 @@ class FlightSnapshot:
     airline: str = ""
     origin_city: str = ""
     dest_city: str = ""
+    via: str = ""          # промежуточные посадки: «TBS Тбилиси», через запятую
     aircraft: str = ""
     terminal: str = ""
     gate: str = ""

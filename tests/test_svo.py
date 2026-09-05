@@ -40,6 +40,29 @@ def test_parse_maps_checkin_boarding_and_belt_fields():
         assert isinstance(s.baggage_belt, str)
 
 
+def _multi_stop_item():
+    # GF013: SVO → TBS (посадка) → BAH (конечная). Табло кладёт цепочку в mar2…mar5.
+    return {"co": {"code": "GF", "name": "Gulf Air"}, "flt": "013",
+            "dat": "2026-09-06T00:00:00+03:00", "i_id": "7",
+            "mar1": {"iata": "SVO", "city": "Москва"},
+            "mar2": {"iata": "TBS", "city": "Тбилиси"},
+            "mar3": {"iata": "BAH", "city": "Бахрейн"},
+            "mar4": {}, "mar5": None}
+
+
+def test_parse_multi_stop_departure_uses_final_destination():
+    s = svo.parse({"items": [_multi_stop_item()]}, "GF013", "departure")[0]
+    assert (s.origin_iata, s.dest_iata) == ("SVO", "BAH")
+    assert s.dest_city == "Бахрейн"
+    assert s.via == "TBS Тбилиси"
+
+
+def test_parse_multi_stop_arrival_mirrors_chain():
+    s = svo.parse({"items": [_multi_stop_item()]}, "GF013", "arrival")[0]
+    assert (s.origin_iata, s.dest_iata) == ("BAH", "SVO")
+    assert s.via == "TBS Тбилиси"
+
+
 def test_parse_filters_by_exact_number():
     # 'search' на табло нестрогий — чужой номер не должен просочиться.
     assert svo.parse(_payload(), "SU9999", "departure") == []

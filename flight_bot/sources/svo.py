@@ -31,13 +31,19 @@ def _port(node: Optional[dict]) -> dict:
 def _shape(item: dict, direction: str) -> FlightSnapshot:
     """Один item табло → нормализованный снапшот.
 
-    mar1 у табло — всегда сторона SVO, mar2 — встречный аэропорт. Что из них
-    origin, а что dest, зависит от направления; так же переставляются триплеты
-    времён (своя сторона t_st/t_et vs встречная t_st_mar/marArrivalEt).
+    mar1 у табло — всегда сторона SVO, mar2…mar5 — остальная цепочка от SVO
+    наружу: у рейса с промежуточной посадкой (GF013 SVO→TBS→BAH) mar2 — это
+    Тбилиси, а конечная точка — последняя непустая. Что origin, а что dest,
+    зависит от направления; так же переставляются триплеты времён (своя
+    сторона t_st/t_et vs встречная t_st_mar/marArrivalEt — они уже про
+    конечную точку).
     """
     co = item.get("co") or {}
     svo = _port(item.get("mar1"))
-    other = _port(item.get("mar2"))
+    chain = [_port(item.get(f"mar{i}")) for i in range(2, 6)]
+    chain = [p for p in chain if p["iata"]]
+    other = chain[-1] if chain else _port(None)
+    via = ", ".join(" ".join(filter(None, (p["iata"], p["city"]))) for p in chain[:-1])
     gate = (item.get("gate_id") or "").strip()
     old_gate = (item.get("old_gate_id") or "").strip()
 
@@ -61,6 +67,7 @@ def _shape(item: dict, direction: str) -> FlightSnapshot:
         dest_iata=dest["iata"],
         origin_city=origin["city"],
         dest_city=dest["city"],
+        via=via,
         status=(item.get("vip_status_rus") or item.get("vip_status") or "").strip(),
         departure=departure,
         arrival=arrival,

@@ -77,6 +77,12 @@ def test_arrival_card_has_belt_and_two_steps():
     assert card.endswith("Вылет · Южно-Сахалинск · 23:30 ✓\nПрилёт · 08:00")
 
 
+def test_via_line_for_multi_stop_flight():
+    card = status_card(_su5822(dest_iata="BAH", dest_city="Бахрейн", via="TBS Тбилиси"), NOW)
+    assert "SVO Москва → BAH Бахрейн\nчерез TBS Тбилиси\nВылет 23:25" in card
+    assert "через" not in status_card(_su5822(), NOW)
+
+
 def test_update_message_format():
     prev = _su5822()
     curr = _su5822(gate="103", gate_prev="101",
