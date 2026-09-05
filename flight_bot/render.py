@@ -47,7 +47,9 @@ def status_card(s: FlightSnapshot) -> str:
     if s.gate:
         tail.append(f"выход {s.gate}")
     if tail:
-        lines.append(", ".join(tail).capitalize())
+        joined = ", ".join(tail)
+        # не capitalize(): он опустил бы регистр терминала ("Терминал c")
+        lines.append(joined[0].upper() + joined[1:])
     return "\n".join(lines)
 
 
