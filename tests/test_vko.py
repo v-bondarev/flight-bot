@@ -15,6 +15,8 @@ def _page():
 def test_canon_handles_cyrillic_codes():
     assert vko.canon("ЮТ 571") == "UT571"
     assert vko.canon("В2 2271") == "B22271"       # кириллическая В
+    assert vko.canon("СУ 6181") == "SU6181"       # транслитерация, не CY
+    assert vko.canon("ФВ 6181") == "FV6181" and vko.canon("ДР 158") == "DP158"
     assert vko.canon("DP 741") == "DP741"
     assert vko.canon("su 025") == "SU25"
 
