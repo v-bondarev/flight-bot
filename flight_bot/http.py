@@ -33,6 +33,34 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 _HOP_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ProxyError)
 
 
+class Renderer:
+    """Клиент рендер-сервиса (deploy/render): HTML после исполнения JS браузером.
+
+    Для табло, которые отдают контент только браузеру (VKO). base_url пустой —
+    рендера нет, источник должен вернуть пусто, а не падать.
+    """
+
+    def __init__(self, base_url: str = "", timeout: float = 90.0,
+                 client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient):
+        self.base_url = base_url.rstrip("/")
+        self._timeout = timeout
+        self._factory = client_factory
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.base_url)
+
+    async def render(self, url: str, wait_ms: int = 8000, selector: Optional[str] = None) -> str:
+        params = {"url": url, "wait": str(wait_ms)}
+        if selector:
+            params["selector"] = selector
+        async with self._factory() as client:
+            r = await client.get(f"{self.base_url}/render", params=params,
+                                 timeout=httpx.Timeout(self._timeout))
+            r.raise_for_status()
+            return r.json().get("html") or ""
+
+
 class Fetcher:
     def __init__(self, scrapedo_api_key: str = "", ru_proxy_url: str = "",
                  timeout: float = 20.0, connect_timeout: float = 6.0,
