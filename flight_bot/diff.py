@@ -1,40 +1,83 @@
 """Diff двух снапшотов рейса → список человеческих изменений для пуша.
 
-Считаем по структурным полям (время/выход/терминал), а НЕ по сырому тексту
-статуса табло: он шумный ("Прибыл в Анталья 06:07~Рейс за 04.09.26") и менялся
-бы на пустом месте. Событие вылета/прилёта ловим по появлению факта.
+События — по хронологии страницы flight.vbondarev.ru: регистрация открыта →
+закрыта → посадка → вылет → прилёт. Ловим по появлению факта, а не по тексту
+статуса: тот шумный и менялся бы на пустом месте. Единственное текстовое —
+отмена: у табло она живёт только в статусе, ключевое слово стабильно.
+
+Сдвиг времени шлём от порога `shift_min`: табло дёргает оценку на минуту-две,
+«мелкий сдвиг пугать незачем» (правило со страницы).
 """
 from __future__ import annotations
 
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
-from flight_bot.models import FlightSnapshot, Leg
+from flight_bot.models import FlightSnapshot, Leg, is_cancelled
 
 
-def _hhmm(iso: str) -> str:
-    """ISO '2026-09-04T00:25:00+03:00' → '00:25'. Пусто — прочерк."""
+def _hhmm(iso: Optional[str]) -> str:
     return iso[11:16] if iso and len(iso) >= 16 else "—"
 
 
-def _leg_changes(label: str, a: Leg, b: Leg) -> List[str]:
-    out: List[str] = []
+def _dt(iso: Optional[str]) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(iso) if iso else None
+    except ValueError:
+        return None
+
+
+def _shift_min(a: Optional[str], b: Optional[str]) -> Optional[int]:
+    da, db = _dt(a), _dt(b)
+    if not da or not db:
+        return None
+    return int(round((db - da).total_seconds() / 60))
+
+
+def _leg_changes(label: str, done: str, a: Leg, b: Leg, shift_min: int) -> List[str]:
     if b.fact and not a.fact:
-        out.append(f"✈️ {label} состоялся в {_hhmm(b.fact)} (план {_hhmm(b.plan)})")
-        return out  # факт перекрывает сдвиг оценки — не дублируем
+        return [f"{done} в {_hhmm(b.fact)} (план {_hhmm(b.plan)})"]
+    if b.fact:
+        return []
     a_eff = a.est or a.plan
     b_eff = b.est or b.plan
-    if not b.fact and b_eff and b_eff != a_eff:
-        out.append(f"⏱ {label}: {_hhmm(a_eff)} → {_hhmm(b_eff)}")
-    return out
+    delta = _shift_min(a_eff, b_eff)
+    if delta is None or abs(delta) < shift_min:
+        return []
+    sign = "+" if delta > 0 else "−"
+    return [f"⏱ {label}: {_hhmm(a_eff)} → {_hhmm(b_eff)} ({sign}{abs(delta)} мин)"]
 
 
-def diff_snapshots(prev: FlightSnapshot, curr: FlightSnapshot) -> List[str]:
+def diff_snapshots(prev: FlightSnapshot, curr: FlightSnapshot,
+                   shift_min: int = 5) -> List[str]:
     """Что изменилось между двумя опросами одного рейса. Пусто — без изменений."""
     out: List[str] = []
-    if curr.gate and curr.gate != prev.gate:
+
+    if is_cancelled(curr) and not is_cancelled(prev):
+        return ["❌ Рейс отменён"]   # остальное после отмены уже неважно
+
+    # Хронология — в том же порядке, что на странице.
+    pc, cc = prev.checkin, curr.checkin
+    if cc.start_fact and not pc.start_fact:
+        where = f", стойки {curr.checkin.desks}" if curr.checkin.desks else ""
+        term = f", терминал {curr.terminal}" if curr.terminal else ""
+        out.append(f"🛎 Регистрация открыта{where}{term}")
+    if cc.finish_fact and not pc.finish_fact:
+        out.append(f"Регистрация закрыта в {_hhmm(cc.finish_fact)}")
+    pb, cb = prev.boarding, curr.boarding
+    if cb.start_fact and not pb.start_fact:
+        gate = f", выход {curr.gate}" if curr.gate else ""
+        out.append(f"🚶 Посадка началась{gate}")
+    if cb.finish_fact and not pb.finish_fact:
+        out.append(f"Посадка закончена в {_hhmm(cb.finish_fact)}")
+    out += _leg_changes("Вылет", "✈️ Вылетел", prev.departure, curr.departure, shift_min)
+    out += _leg_changes("Прилёт", "🛬 Прилетел", prev.arrival, curr.arrival, shift_min)
+
+    # Плитки. Смену выхода показываем только до вылета: после — уже история.
+    if curr.gate and curr.gate != prev.gate and not curr.departure.fact:
         out.append(f"🚪 Выход: {prev.gate or '—'} → {curr.gate}")
     if curr.terminal and curr.terminal != prev.terminal:
         out.append(f"🏢 Терминал: {prev.terminal or '—'} → {curr.terminal}")
-    out += _leg_changes("Вылет", prev.departure, curr.departure)
-    out += _leg_changes("Прилёт", prev.arrival, curr.arrival)
+    if curr.baggage_belt and curr.baggage_belt != prev.baggage_belt:
+        out.append(f"🧳 Лента багажа {curr.baggage_belt}")
     return out

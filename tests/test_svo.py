@@ -30,6 +30,16 @@ def test_parse_maps_times_and_terminal():
     assert s.terminal                       # у SU2128 в фикстуре терминал 'C'
 
 
+def test_parse_maps_checkin_boarding_and_belt_fields():
+    snaps = svo.parse(_payload(), "SU2128", "departure")
+    # У будущих дат табло уже держит плановое окно регистрации.
+    assert any(s.checkin.start_plan for s in snaps)
+    for s in snaps:
+        assert isinstance(s.checkin.desks, str)
+        assert isinstance(s.boarding.start_min, str)
+        assert isinstance(s.baggage_belt, str)
+
+
 def test_parse_filters_by_exact_number():
     # 'search' на табло нестрогий — чужой номер не должен просочиться.
     assert svo.parse(_payload(), "SU9999", "departure") == []

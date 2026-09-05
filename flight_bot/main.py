@@ -13,7 +13,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from flight_bot import bot as handlers
-from flight_bot import config, poller, storage
+from flight_bot import config, poller, registry, storage
 
 log = logging.getLogger("flight_bot")
 
@@ -25,6 +25,7 @@ async def main() -> None:
     settings = config.load()
     if not settings.bot_token:
         raise SystemExit("BOT_TOKEN не задан (см. .env.example)")
+    registry.configure(settings)
 
     conn = storage.connect(settings.db_path)
     tg = Bot(settings.bot_token,

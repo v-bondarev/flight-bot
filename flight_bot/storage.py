@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     active     INTEGER NOT NULL DEFAULT 1,
     created_at TEXT    NOT NULL,
     last_json  TEXT,
+    next_at    INTEGER NOT NULL DEFAULT 0,   -- epoch следующего опроса (адаптивный)
     UNIQUE(chat_id, flight, date)
 );
 """
@@ -63,6 +64,18 @@ def list_for_chat(conn: sqlite3.Connection, chat_id: int) -> List[sqlite3.Row]:
 
 def active_all(conn: sqlite3.Connection) -> List[sqlite3.Row]:
     return conn.execute("SELECT * FROM subscriptions WHERE active=1").fetchall()
+
+
+def due(conn: sqlite3.Connection, now_epoch: int) -> List[sqlite3.Row]:
+    """Активные подписки, которым пора опрашиваться."""
+    return conn.execute(
+        "SELECT * FROM subscriptions WHERE active=1 AND next_at<=?", (now_epoch,)
+    ).fetchall()
+
+
+def set_next(conn: sqlite3.Connection, sub_id: int, epoch: int) -> None:
+    conn.execute("UPDATE subscriptions SET next_at=? WHERE id=?", (epoch, sub_id))
+    conn.commit()
 
 
 def remove(conn: sqlite3.Connection, chat_id: int, sub_id: int) -> bool:

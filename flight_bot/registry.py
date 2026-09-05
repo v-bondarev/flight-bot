@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
+from flight_bot.sources.airlabs import AirlabsSource
 from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.svo import SvoSource
 
@@ -17,6 +19,12 @@ DIRECTIONS = ("departure", "arrival")
 
 # Настроенные табло. Добавление источника = одна строка здесь.
 SOURCES: List[FlightSource] = [SvoSource()]
+
+
+def configure(settings: Settings) -> None:
+    """Источники с ключами — в конец списка: табло богаче, они первые."""
+    if settings.airlabs_api_key:
+        SOURCES.append(AirlabsSource(settings.airlabs_api_key))
 
 
 async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapshot]:

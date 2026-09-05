@@ -12,7 +12,7 @@ from __future__ import annotations
 import urllib.parse
 from typing import List, Optional
 
-from flight_bot.models import FlightSnapshot, Leg
+from flight_bot.models import Boarding, Checkin, FlightSnapshot, Leg
 from flight_bot.sources.base import FlightSource
 
 BASE_URL = "https://www.svo.aero/bitrix/timetable/"
@@ -64,11 +64,25 @@ def _shape(item: dict, direction: str) -> FlightSnapshot:
         status=(item.get("vip_status_rus") or item.get("vip_status") or "").strip(),
         departure=departure,
         arrival=arrival,
+        checkin=Checkin(
+            desks=(item.get("chin_id") or "").strip(),
+            start_plan=item.get("estimated_chin_start"),
+            finish_plan=item.get("estimated_chin_finish"),
+            start_fact=item.get("t_chin_start"),
+            finish_fact=item.get("t_chin_finish"),
+        ),
+        boarding=Boarding(
+            start_fact=item.get("t_boarding_start"),
+            finish_fact=item.get("t_bording_finish"),   # sic: опечатка в API табло
+            start_min=str(item.get("planed_board_start") or ""),
+        ),
         airline=(co.get("name") or "").strip(),
         aircraft=(item.get("aircraft_type_name") or "").strip(),
         terminal=(item.get("term") or "").strip(),
         gate=gate,
         gate_prev=old_gate if old_gate and old_gate != gate else "",
+        gate_terminal=(item.get("term_gate") or "").strip(),
+        baggage_belt=(item.get("bbel_id") or "").strip(),
         source="svo.aero",
         key=str(item.get("i_id") or item.get("id") or ""),
     )

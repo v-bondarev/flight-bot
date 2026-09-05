@@ -13,6 +13,7 @@ class Settings:
     grace_sec: int              # держать подписку после прилёта, потом снять
     scrapedo_api_key: str       # для источников с антиботом (DME/Pulkovo); пусто — не используем
     yandex_rasp_api_key: str    # реестр «номер → аэропорт» вне Москвы; пусто — не используем
+    airlabs_api_key: str        # статус/маршрут по номеру вне наших табло; пусто — не используем
 
 
 def load_env(path: str = ".env") -> None:
@@ -42,4 +43,5 @@ def load() -> Settings:
         grace_sec=int(os.getenv("GRACE_SEC", "3600")),
         scrapedo_api_key=os.getenv("SCRAPEDO_API_KEY", ""),
         yandex_rasp_api_key=os.getenv("YANDEX_RASP_API_KEY", ""),
+        airlabs_api_key=os.getenv("AIRLABS_API_KEY", ""),
     )
