@@ -24,7 +24,12 @@ SOURCES: List[FlightSource] = [SvoSource(), DmeSource()]
 
 
 def configure(settings: Settings) -> None:
-    """Источники с ключами — в конец списка: табло богаче, они первые."""
+    """Источники с ключами — в конец списка: табло богаче, они первые.
+    Табло с гео-блоком (DME) получают ключ scrape.do как запасной транспорт."""
+    if settings.scrapedo_api_key:
+        for src in SOURCES:
+            if isinstance(src, DmeSource):
+                src.fetcher.api_key = settings.scrapedo_api_key
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
 

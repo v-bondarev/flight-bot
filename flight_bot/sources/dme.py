@@ -17,6 +17,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
+from flight_bot.http import Fetcher
 from flight_bot.models import FlightSnapshot, Leg
 from flight_bot.sources.base import FlightSource
 
@@ -152,8 +153,10 @@ def build(row: Dict, det: Dict, direction: str) -> FlightSnapshot:
 class DmeSource(FlightSource):
     name = "dme.ru"
 
-    def __init__(self, timeout: float = 20.0):
+    def __init__(self, scrapedo_api_key: str = "", timeout: float = 20.0):
         self._timeout = timeout
+        # dme.ru с riga не отвечает — при провале напрямую Fetcher уходит в scrape.do.
+        self.fetcher = Fetcher(scrapedo_api_key, timeout)
 
     async def fetch(
         self,
@@ -166,23 +169,19 @@ class DmeSource(FlightSource):
         no = _norm(flight_no)
         search = f"{no[:2]} {no[2:]}"              # табло ищет по «S7 1055», с пробелом
         today = datetime.now(MSK).date()
-        headers = {"User-Agent": UA}
-        async with httpx.AsyncClient(timeout=self._timeout, headers=headers,
+        async with httpx.AsyncClient(timeout=self._timeout, headers={"User-Agent": UA},
                                      follow_redirects=True) as client:
-            resp = await client.get(BASE_URL, params={
+            page = await self.fetcher.get(client, BASE_URL, {
                 "searchText": search, "direction": DIRECTION_PARAM[direction]})
-            resp.raise_for_status()
-            rows = [r for r in parse_board(resp.text, no, today)
+            rows = [r for r in parse_board(page, no, today)
                     if not date or (r["plan"] or "")[:10] == date]
             out = []
             for row in rows:
                 det: Dict = {}
                 if row["id"]:
-                    try:
-                        d = await client.get(DETAIL_URL, params={"id": row["id"]},
-                                             headers={"X-Requested-With": "XMLHttpRequest"})
-                        d.raise_for_status()
-                        det = parse_detailed(d.text)
+                    try:   # Detailed отдаётся и без XHR-заголовка — важно для scrape.do
+                        det = parse_detailed(
+                            await self.fetcher.get(client, DETAIL_URL, {"id": row["id"]}))
                     except Exception:  # noqa: BLE001 — без деталей строка табло всё равно полезна
                         det = {}
                 out.append(build(row, det, direction))
