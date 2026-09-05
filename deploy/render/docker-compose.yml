@@ -1,0 +1,12 @@
+# Рендер-сервис на RU-хосте. Порт только на localhost — наружу через SSH-туннель.
+#   docker compose up -d --build
+#   curl -s 'http://127.0.0.1:8765/health'
+services:
+  render:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    shm_size: "1g"
+    environment:
+      - PORT=8765

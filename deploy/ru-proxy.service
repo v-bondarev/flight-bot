@@ -3,6 +3,7 @@
 # (dme.ru). На RU-хосте ничего не ставится — прокси делает сам sshd.
 # Требования: autossh на сервере бота, ключ пользователя сервиса в
 # authorized_keys на RU-хосте, Host ru-host в ~/.ssh/config пользователя.
+# -L 8765 — рендер-сервис (deploy/render) на RU-хосте, для табло за JS (VKO).
 #   sudo apt install autossh
 #   sudo cp /opt/flight-bot/deploy/ru-proxy.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now ru-proxy
@@ -19,7 +20,9 @@ Environment=AUTOSSH_GATETIME=0
 ExecStart=/usr/bin/autossh -M 0 -N \
   -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
   -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-  -D 127.0.0.1:1080 ru-host
+  -D 127.0.0.1:1080 \
+  -L 127.0.0.1:8765:127.0.0.1:8765 \
+  ru-host
 Restart=always
 RestartSec=10
 
