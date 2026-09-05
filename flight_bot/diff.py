@@ -80,4 +80,9 @@ def diff_snapshots(prev: FlightSnapshot, curr: FlightSnapshot,
         out.append(f"🏢 Терминал: {prev.terminal or '—'} → {curr.terminal}")
     if curr.baggage_belt and curr.baggage_belt != prev.baggage_belt:
         out.append(f"🧳 Лента багажа {curr.baggage_belt}")
+    # У табло без времён фаз (VKO) смена фазы живёт только в статусе. Шлём её,
+    # если больше ничего не изменилось и статус без цифр — статусы с временем
+    # (SVO: «Регистрация в 18:25», «Прибыл … 06:07») дёргаются и не нужны.
+    if not out and curr.status and curr.status != prev.status and not any(c.isdigit() for c in curr.status):
+        out.append(f"ℹ️ {curr.status}")
     return out

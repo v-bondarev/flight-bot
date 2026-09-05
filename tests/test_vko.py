@@ -39,16 +39,15 @@ def test_departure_snapshot_and_status_phases():
     s = vko.parse(_page(), "DP741", TODAY)[0]
     assert (s.origin_iata, s.dest_iata, s.dest_city, s.direction) == ("VKO", "TAS", "Ташкент", "departure")
     assert s.departure.plan == "2026-09-05T21:20:00+03:00"
-    assert s.boarding.start_fact and s.boarding.finish_fact          # «Посадка закончена»
+    assert s.status == "Посадка закончена"
+    assert s.boarding.start_fact is None and s.boarding.finish_fact is None   # времён фаз табло не даёт — не выдумываем
     assert (s.terminal, s.gate, s.source, s.key) == ("А", "26A", "vnukovo.ru", "101133366")
 
     by_status = {x.status: x for x in (vko.build(r, "departure", "X") for r in vko.parse_board(_page(), TODAY))}
     # табло держит сегодня и завтра одной страницей — дата берётся из строки
     assert by_status["Регистрация с 22:00"].checkin.start_plan == "2026-09-06T22:00:00+03:00"
-    assert by_status["Идёт регистрация"].checkin.start_fact
     assert by_status["Идёт регистрация"].checkin.desks == "129"     # «…Стойка 129» вынута из статуса
-    assert by_status["Посадка с 20:55"].boarding.start_fact is None
-    assert by_status["Идёт посадка"].boarding.start_fact and not by_status["Идёт посадка"].boarding.finish_fact
+    assert by_status["Посадка с 20:55"].boarding.start_min == "40"  # вылет 21:35 − посадка 20:55
 
 
 def test_status_times_become_fact_or_estimate():

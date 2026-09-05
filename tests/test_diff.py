@@ -71,6 +71,14 @@ def test_cancellation_is_the_only_message():
     assert diff_snapshots(_snap(gate="129"), b) == ["❌ Рейс отменён"]
 
 
+def test_status_phase_change_only_when_nothing_else_and_no_digits():
+    assert diff_snapshots(_snap(status="Идёт регистрация"), _snap(status="Идёт посадка")) == ["ℹ️ Идёт посадка"]
+    # статус с временем (SVO) — молчим
+    assert diff_snapshots(_snap(status="Регистрация в 18:25"), _snap(status="Регистрация в 18:30")) == []
+    # есть структурное изменение — статус не дублируем
+    assert diff_snapshots(_snap(status="Ожидается", gate="1"), _snap(status="Идёт посадка", gate="2")) == ["🚪 Выход: 1 → 2"]
+
+
 def test_chronology_before_tiles():
     a = _snap(gate="129")
     b = _snap(gate="130", departure=Leg(plan=DEP, est="2026-09-06T00:55:00+03:00"))

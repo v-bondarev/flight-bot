@@ -76,6 +76,13 @@ def _at(day: str, hhmm: str, not_before: Optional[str] = None) -> Optional[str]:
     return d.isoformat()
 
 
+def _minutes_before(plan: Optional[str], boarding_at: Optional[str]) -> str:
+    if not plan or not boarding_at:
+        return ""
+    m = int((datetime.fromisoformat(plan) - datetime.fromisoformat(boarding_at)).total_seconds() // 60)
+    return str(m) if m > 0 else ""
+
+
 def direction_of(page: str) -> str:
     return "arrival" if re.search(r'_time"><span class="visible-lg">\s*Время прил', page) else "departure"
 
@@ -123,12 +130,11 @@ def build(row: Dict, direction: str, flight: str) -> FlightSnapshot:
     own = Leg(plan=plan, est=est, fact=fact)
     checkin = boarding = None
     if direction == "departure":
+        # Фактических времён фаз табло не даёт — ничего не выдумываем: «Идёт
+        # регистрация»/«Идёт посадка» живут в статусе, диффер шлёт его смену.
         checkin = Checkin(desks=desks,
-                          start_plan=_at(day, st) if "регистрация с" in low else None,
-                          start_fact=plan if ("идёт регистрация" in low or "идет регистрация" in low) else None)
-        boarding = Boarding(start_fact=plan if ("идёт посадка" in low or "идет посадка" in low
-                                                or "посадка закончена" in low) else None,
-                            finish_fact=plan if "посадка закончена" in low else None)
+                          start_plan=_at(day, st) if "регистрация с" in low else None)
+        boarding = Boarding(start_min=_minutes_before(plan, _at(day, st)) if "посадка с" in low else "")
     common = dict(flight=flight, date=day, direction=direction, status=st,
                   airline=row["airline"], terminal=row["terminal"], gate=row["gate"],
                   source="vnukovo.ru", key=row["id"])
