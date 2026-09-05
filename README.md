@@ -35,6 +35,20 @@ Telegram-бот подписки на статус авиарейсов. На в
                               подписка ── опрос по расписанию ── diff ────────┘──> пуш в Telegram
 ```
 
+## Как работает бот
+
+1. Пользователь шлёт номер рейса (`SU2128`) → бот пробует его на настроенных
+   табло в обоих направлениях (`registry.probe`) и показывает найденные даты
+   кнопками.
+2. Тап по дате → подписка в SQLite + карточка текущего статуса.
+3. Поллер раз в `POLL_INTERVAL_SEC` снимает снапшот каждой активной подписки,
+   считает `diff_snapshots(prev, curr)` и шлёт только изменения: выход,
+   терминал, сдвиг времени вылета/прилёта, факт вылета/прилёта.
+4. После факта прилёта подписка снимается сама.
+
+Диффер считает по структурным полям, а не по сырому тексту статуса табло —
+тот шумный и менялся бы на пустом месте.
+
 ## Разработка
 
 ```bash
@@ -42,7 +56,20 @@ pip install -r requirements.txt pytest
 pytest
 ```
 
+Тесты не ходят в сеть: парсер SVO гоняется на боевой фикстуре, поллер — с
+подменённым источником.
+
 ## Деплой
 
 Хост, где лежит сайт (`vps-site`), каталог `/opt/flight-bot` — отдельно от сайта,
-доставка через `git push`/`git pull`. Токен бота и ключи — в `.env` (не в git).
+доставка через `git push`/`git pull`. Секреты — в `/opt/flight-bot/.env`
+(см. `.env.example`, в git не коммитится).
+
+```bash
+cd /opt/flight-bot && git pull
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+sudo cp deploy/flight-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now flight-bot
+```
+
+Обновление: `git pull && sudo systemctl restart flight-bot`.

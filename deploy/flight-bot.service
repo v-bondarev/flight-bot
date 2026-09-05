@@ -1,0 +1,19 @@
+# systemd-юнит. Установка на сервере:
+#   sudo cp /opt/flight-bot/deploy/flight-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now flight-bot
+[Unit]
+Description=flight-bot — Telegram-подписка на статус авиарейсов
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vbondarev
+WorkingDirectory=/opt/flight-bot
+EnvironmentFile=/opt/flight-bot/.env
+ExecStart=/opt/flight-bot/.venv/bin/python -m flight_bot.main
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

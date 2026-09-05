@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -41,6 +42,17 @@ class FlightSnapshot:
     gate_prev: str = ""    # прошлый выход, если сменили — самое дорогое для пассажира
     source: str = ""       # "svo.aero", "dme.ru"…
     key: str = ""          # стабильный id рейса у источника, для сопоставления опросов
+
+
+def snap_to_dict(s: FlightSnapshot) -> dict:
+    return dataclasses.asdict(s)
+
+
+def snap_from_dict(d: dict) -> FlightSnapshot:
+    d = dict(d)
+    d["departure"] = Leg(**(d.get("departure") or {}))
+    d["arrival"] = Leg(**(d.get("arrival") or {}))
+    return FlightSnapshot(**d)
 
 
 @dataclass(frozen=True)
