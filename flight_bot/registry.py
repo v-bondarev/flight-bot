@@ -15,20 +15,21 @@ from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.airlabs import AirlabsSource
 from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.dme import DmeSource
+from flight_bot.sources.led import LedSource
 from flight_bot.sources.svo import SvoSource
 
 DIRECTIONS = ("departure", "arrival")
 
 # Настроенные табло. Добавление источника = одна строка здесь.
-SOURCES: List[FlightSource] = [SvoSource(), DmeSource()]
+SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource()]
 
 
 def configure(settings: Settings) -> None:
     """Источники с ключами — в конец списка: табло богаче, они первые.
-    Табло с гео-блоком (DME) получают ключ scrape.do как запасной транспорт."""
+    Табло, ходящие через Fetcher, получают ключ scrape.do как запасной транспорт."""
     if settings.scrapedo_api_key:
         for src in SOURCES:
-            if isinstance(src, DmeSource):
+            if hasattr(src, "fetcher"):
                 src.fetcher.api_key = settings.scrapedo_api_key
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
