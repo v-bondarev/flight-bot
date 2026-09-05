@@ -6,7 +6,7 @@
 отмена: у табло она живёт только в статусе, ключевое слово стабильно.
 
 Сдвиг времени шлём от порога `shift_min`: табло дёргает оценку на минуту-две,
-«мелкий сдвиг пугать незачем» (правило со страницы).
+«мелкий сдвиг пугать незачем».
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def diff_snapshots(prev: FlightSnapshot, curr: FlightSnapshot,
     if is_cancelled(curr) and not is_cancelled(prev):
         return ["❌ Рейс отменён"]   # остальное после отмены уже неважно
 
-    # Хронология — в том же порядке, что на странице.
+    # Хронология — по порядку событий рейса.
     pc, cc = prev.checkin, curr.checkin
     if cc.start_fact and not pc.start_fact:
         where = f", стойки {curr.checkin.desks}" if curr.checkin.desks else ""
