@@ -17,6 +17,7 @@ class Settings:
     ru_proxy_url: str           # свой RU-выход для табло (socks5://127.0.0.1:1080 SSH-туннель до RU-хоста); пусто — сразу scrape.do
     scrapedo_concurrency: int   # одновременных запросов к scrape.do (кредиты платные)
     render_url: str             # рендер-сервис (deploy/render) через туннель; пусто — табло за JS недоступны
+    render_cache_sec: int       # кэш отрендеренной страницы табло: одна на все подписки аэропорта
 
 
 def load_env(path: str = ".env") -> None:
@@ -50,4 +51,5 @@ def load() -> Settings:
         ru_proxy_url=os.getenv("RU_PROXY_URL", ""),
         scrapedo_concurrency=int(os.getenv("SCRAPEDO_CONCURRENCY", "2")),
         render_url=os.getenv("RENDER_URL", ""),
+        render_cache_sec=int(os.getenv("RENDER_CACHE_SEC", "75")),
     )

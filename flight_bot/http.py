@@ -11,6 +11,7 @@ dme.ru не отвечает с зарубежного адреса сервер
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Callable, Dict, Optional
 
 import httpx
@@ -40,15 +41,30 @@ class Renderer:
     рендера нет, источник должен вернуть пусто, а не падать.
     """
 
-    def __init__(self, base_url: str = "", timeout: float = 90.0,
-                 client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient):
+    def __init__(self, base_url: str = "", timeout: float = 90.0, cache_sec: float = 75.0,
+                 client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
+                 clock: Callable[[], float] = time.monotonic):
         self.base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._factory = client_factory
+        # Рендер дорогой (15–20 с), а табло — одна страница на все подписки
+        # аэропорта: держим результат cache_sec и склеиваем одновременные
+        # одинаковые запросы в один.
+        self.cache_sec = cache_sec
+        self._clock = clock
+        self._cache: Dict[tuple, tuple] = {}          # key → (ts, html)
+        self._inflight: Dict[tuple, asyncio.Task] = {}
 
     @property
     def enabled(self) -> bool:
         return bool(self.base_url)
+
+    async def _fetch(self, params: dict) -> str:
+        async with self._factory() as client:
+            r = await client.get(f"{self.base_url}/render", params=params,
+                                 timeout=httpx.Timeout(self._timeout))
+            r.raise_for_status()
+            return r.json().get("html") or ""
 
     async def render(self, url: str, wait_ms: int = 8000, selector: Optional[str] = None,
                      click: Optional[str] = None) -> str:
@@ -57,11 +73,21 @@ class Renderer:
             params["selector"] = selector
         if click:
             params["click"] = click
-        async with self._factory() as client:
-            r = await client.get(f"{self.base_url}/render", params=params,
-                                 timeout=httpx.Timeout(self._timeout))
-            r.raise_for_status()
-            return r.json().get("html") or ""
+        key = (url, click)
+        hit = self._cache.get(key)
+        if hit and self._clock() - hit[0] < self.cache_sec:
+            return hit[1]
+        task = self._inflight.get(key)
+        if task is None:
+            task = asyncio.ensure_future(self._fetch(params))
+            self._inflight[key] = task
+            try:
+                html = await task
+                self._cache[key] = (self._clock(), html)
+                return html
+            finally:
+                self._inflight.pop(key, None)
+        return await task
 
 
 class Fetcher:

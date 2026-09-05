@@ -38,7 +38,7 @@ def configure(settings: Settings) -> None:
             src.fetcher.api_key = settings.scrapedo_api_key
             src.fetcher.ru_proxy_url = settings.ru_proxy_url
         if hasattr(src, "renderer"):
-            src.renderer = Renderer(settings.render_url)
+            src.renderer = Renderer(settings.render_url, cache_sec=settings.render_cache_sec)
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
 
