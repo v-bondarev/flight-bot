@@ -183,7 +183,9 @@ def status_card(s: FlightSnapshot, now: Optional[datetime] = None) -> str:
     lines = [
         "<b>" + head[0] + "</b>" + "".join(f" · {h}" for h in head[1:] if h),
         _day(s.departure.plan or s.date),
-        f"{_e(s.origin_iata)} {_e(s.origin_city)} → {_e(s.dest_iata)} {_e(s.dest_city)}".replace("  ", " "),
+        # Города не всегда есть (AirLabs их не отдаёт) — собираем без дыр и хвостов.
+        f"{' '.join(filter(None, (_e(s.origin_iata), _e(s.origin_city))))} → "
+        f"{' '.join(filter(None, (_e(s.dest_iata), _e(s.dest_city))))}",
         f"Вылет {_leg_time(s.departure)} · Прилёт {_leg_time(s.arrival)}",
         "",
         f"{_dot(s)} {_e(s.status.split('~', 1)[0].strip()) or 'Статус не объявлен'}",
