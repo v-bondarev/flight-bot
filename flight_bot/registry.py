@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from flight_bot.config import Settings
@@ -38,6 +39,20 @@ async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapsh
             if snaps:
                 return snaps
     return []
+
+
+MSK = timezone(timedelta(hours=3))   # дата рейса на табло — московская
+
+
+def upcoming(snaps: List[FlightSnapshot], today: Optional[date] = None) -> List[FlightSnapshot]:
+    """Первый снимок на каждую дату, не раньше сегодняшней: табло держит и
+    вчерашние рейсы, а подписываться на прошедшее незачем."""
+    today = today or datetime.now(MSK).date()
+    seen = {}
+    for s in snaps:
+        if s.date >= today.isoformat():
+            seen.setdefault(s.date, s)
+    return list(seen.values())
 
 
 async def fetch_for(flight_no: str, date: str, direction: str) -> Optional[FlightSnapshot]:

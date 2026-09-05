@@ -61,22 +61,18 @@ async def list_subs(message: Message, conn: sqlite3.Connection) -> None:
 @router.message(F.text.regexp(FLIGHT_RE))
 async def on_flight_number(message: Message) -> None:
     flight = message.text.strip().upper().replace(" ", "")
-    snaps = await registry.probe(flight)
+    snaps = registry.upcoming(await registry.probe(flight))
     if not snaps:
         await message.answer(
-            f"Рейс {flight} не нашёл на доступных табло. "
+            f"Рейс {flight} не нашёл на доступных табло на ближайшие дни. "
             "Проверьте номер или попробуйте позже."
         )
         return
-    # Уникальные даты в порядке появления.
-    seen = {}
-    for s in snaps:
-        seen.setdefault(s.date, s)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f"{s.date[8:10]}.{s.date[5:7]} · {s.origin_iata}→{s.dest_iata}",
             callback_data=f"sub|{flight}|{s.date}|{s.direction}")]
-        for s in seen.values()
+        for s in snaps
     ])
     await message.answer(f"Нашёл {flight}. На какую дату следить?", reply_markup=kb)
 

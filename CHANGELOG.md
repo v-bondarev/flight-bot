@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Кнопки дат: прошедшие даты (табло держит и вчерашние) не предлагаем.
 - Каркас: модели `FlightSnapshot`/`Leg`/`FlightRoute`, контракты `FlightSource`
   и `AirportResolver`.
 - Источник `SvoSource` — табло Шереметьево (Bitrix-JSON), чистый парсер + тесты
