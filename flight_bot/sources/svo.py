@@ -31,19 +31,19 @@ def _port(node: Optional[dict]) -> dict:
 def _shape(item: dict, direction: str) -> FlightSnapshot:
     """Один item табло → нормализованный снапшот.
 
-    mar1 у табло — всегда сторона SVO, mar2…mar5 — остальная цепочка от SVO
-    наружу: у рейса с промежуточной посадкой (GF013 SVO→TBS→BAH) mar2 — это
-    Тбилиси, а конечная точка — последняя непустая. Что origin, а что dest,
-    зависит от направления; так же переставляются триплеты времён (своя
-    сторона t_st/t_et vs встречная t_st_mar/marArrivalEt — они уже про
-    конечную точку).
+    mar1…mar5 — маршрут В ПОРЯДКЕ ПОЛЁТА для обоих направлений: на табло
+    вылета mar1 = SVO, на табло прилёта mar1 = аэропорт отправления, а SVO —
+    последний (SU1325: mar1 = MMK, mar2 = SVO). У рейса с промежуточной
+    посадкой (GF013 SVO→TBS→BAH) середина цепочки — «через». Направление
+    влияет только на времена: своя сторона t_st/t_et/t_at — это SVO, встречная
+    t_st_mar/marArrivalEt/t_at_mar — другой конец маршрута.
     """
     co = item.get("co") or {}
-    svo = _port(item.get("mar1"))
-    chain = [_port(item.get(f"mar{i}")) for i in range(2, 6)]
+    chain = [_port(item.get(f"mar{i}")) for i in range(1, 6)]
     chain = [p for p in chain if p["iata"]]
-    other = chain[-1] if chain else _port(None)
-    via = ", ".join(" ".join(filter(None, (p["iata"], p["city"]))) for p in chain[:-1])
+    origin = chain[0] if chain else _port(None)
+    dest = chain[-1] if chain else _port(None)
+    via = ", ".join(" ".join(filter(None, (p["iata"], p["city"]))) for p in chain[1:-1])
     gate = (item.get("gate_id") or "").strip()
     old_gate = (item.get("old_gate_id") or "").strip()
 
@@ -53,10 +53,8 @@ def _shape(item: dict, direction: str) -> FlightSnapshot:
               fact=item.get("t_at_mar"))
 
     if direction == "arrival":
-        origin, dest = other, svo
         departure, arrival = mar, own
     else:
-        origin, dest = svo, other
         departure, arrival = own, mar
 
     return FlightSnapshot(

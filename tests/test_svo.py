@@ -57,8 +57,24 @@ def test_parse_multi_stop_departure_uses_final_destination():
     assert s.via == "TBS Тбилиси"
 
 
-def test_parse_multi_stop_arrival_mirrors_chain():
-    s = svo.parse({"items": [_multi_stop_item()]}, "GF013", "arrival")[0]
+def test_parse_arrival_chain_is_in_flight_order():
+    # Табло прилёта: mar1 — откуда летит, SVO — последний (SU1325 MMK→SVO).
+    item = {"co": {"code": "SU"}, "flt": "1325", "dat": "2026-09-05T00:00:00+03:00",
+            "mar1": {"iata": "MMK", "city": "Мурманск"},
+            "mar2": {"iata": "SVO", "city": "Москва"},
+            "t_st": "2026-09-05T21:15:00+03:00",          # своя сторона = прилёт в SVO
+            "t_st_mar": "2026-09-05T19:00:00+03:00"}      # встречная = вылет из MMK
+    s = svo.parse({"items": [item]}, "SU1325", "arrival")[0]
+    assert (s.origin_iata, s.dest_iata) == ("MMK", "SVO")
+    assert s.via == ""
+    assert s.departure.plan == "2026-09-05T19:00:00+03:00"
+    assert s.arrival.plan == "2026-09-05T21:15:00+03:00"
+
+
+def test_parse_multi_stop_arrival_via_in_the_middle():
+    item = dict(_multi_stop_item(), mar1={"iata": "BAH", "city": "Бахрейн"},
+                mar3={"iata": "SVO", "city": "Москва"})
+    s = svo.parse({"items": [item]}, "GF013", "arrival")[0]
     assert (s.origin_iata, s.dest_iata) == ("BAH", "SVO")
     assert s.via == "TBS Тбилиси"
 
