@@ -10,11 +10,24 @@ dme.ru не отвечает с зарубежного адреса сервер
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+import asyncio
+from typing import Callable, Dict, Optional
 
 import httpx
 
 SCRAPEDO_URL = "https://api.scrape.do/"
+# Одновременных запросов к scrape.do на процесс: кредиты платные, а поллер
+# опрашивает подписки параллельно. Семафор — по event loop (тесты гоняют
+# каждый свой), выставляется registry.configure из SCRAPEDO_CONCURRENCY.
+SCRAPEDO_LIMIT = 2
+_sems: Dict[int, asyncio.Semaphore] = {}
+
+
+def _scrapedo_semaphore() -> asyncio.Semaphore:
+    key = id(asyncio.get_running_loop())
+    if key not in _sems:
+        _sems[key] = asyncio.Semaphore(SCRAPEDO_LIMIT)
+    return _sems[key]
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 _HOP_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ProxyError)
@@ -56,9 +69,10 @@ class Fetcher:
                     raise
                 self.proxy_blocked = True
         target = str(httpx.URL(url, params=params or {}))
-        async with self._factory(headers={"User-Agent": UA}) as client:
-            r = await client.get(SCRAPEDO_URL,
-                                 params={"token": self.api_key, "url": target, "geoCode": "ru"},
-                                 timeout=httpx.Timeout(max(self._timeout, 60.0)))
-            r.raise_for_status()
-            return r.text
+        async with _scrapedo_semaphore():
+            async with self._factory(headers={"User-Agent": UA}) as client:
+                r = await client.get(SCRAPEDO_URL,
+                                     params={"token": self.api_key, "url": target, "geoCode": "ru"},
+                                     timeout=httpx.Timeout(max(self._timeout, 60.0)))
+                r.raise_for_status()
+                return r.text

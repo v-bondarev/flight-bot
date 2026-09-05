@@ -7,8 +7,9 @@
 """
 from __future__ import annotations
 
+import dataclasses
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
@@ -27,12 +28,47 @@ SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource()]
 def configure(settings: Settings) -> None:
     """Источники с ключами — в конец списка: табло богаче, они первые.
     Табло, ходящие через Fetcher, получают ключ scrape.do как запасной транспорт."""
+    from flight_bot import http
+    http.SCRAPEDO_LIMIT = settings.scrapedo_concurrency
     for src in SOURCES:
         if hasattr(src, "fetcher"):
             src.fetcher.api_key = settings.scrapedo_api_key
             src.fetcher.ru_proxy_url = settings.ru_proxy_url
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
+
+
+# Маршрут по номеру у AirLabs: (origin, dest). Кэш на процесс — маршрут у
+# номера стабилен, а платить вызовом за каждый опрос незачем.
+_iata_cache: Dict[str, Tuple[str, str]] = {}
+
+
+async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
+    """Дополнить IATA там, где табло дало только город (DME): берём у AirLabs.
+
+    Доверяем только если известная нам сторона совпала (для вылета из DME
+    AirLabs тоже должен показать DME отправлением) — иначе это другое плечо.
+    """
+    airlabs = next((s for s in SOURCES if isinstance(s, AirlabsSource)), None)
+    if airlabs is None:
+        return snaps
+    out = []
+    for s in snaps:
+        if s.origin_iata and s.dest_iata:
+            out.append(s)
+            continue
+        if s.flight not in _iata_cache:
+            try:
+                al = await airlabs.fetch(s.flight)
+                _iata_cache[s.flight] = (al[0].origin_iata, al[0].dest_iata) if al else ("", "")
+            except Exception:  # noqa: BLE001 — обогащение не должно ломать основной путь
+                _iata_cache[s.flight] = ("", "")
+        o, d = _iata_cache[s.flight]
+        known_ok = (s.origin_iata and s.origin_iata == o) or (s.dest_iata and s.dest_iata == d)
+        if known_ok:
+            s = dataclasses.replace(s, origin_iata=s.origin_iata or o, dest_iata=s.dest_iata or d)
+        out.append(s)
+    return out
 
 
 async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapshot]:
@@ -44,7 +80,7 @@ async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapsh
             except Exception:  # noqa: BLE001 — источник мог отвалиться, пробуем следующий
                 continue
             if snaps:
-                return snaps
+                return await enrich_iata(snaps)
     return []
 
 
@@ -78,7 +114,7 @@ async def fetch_for(flight_no: str, date: str, direction: str,
             continue
         for s in snaps:
             if s.date == date:
-                return s
+                return (await enrich_iata([s]))[0]
     return None
 
 
