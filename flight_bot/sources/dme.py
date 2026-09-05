@@ -154,7 +154,7 @@ class DmeSource(FlightSource):
     name = "dme.ru"
 
     def __init__(self, scrapedo_api_key: str = "", timeout: float = 20.0):
-        # dme.ru с riga не отвечает — Fetcher уводит в RU-прокси / scrape.do.
+        # dme.ru не пускает зарубежный адрес — Fetcher уводит в RU-прокси / scrape.do.
         self.fetcher = Fetcher(scrapedo_api_key, timeout=timeout)
 
     async def fetch(
