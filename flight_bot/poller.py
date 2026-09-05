@@ -70,7 +70,8 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
         if expired(row["date"], now):
             storage.deactivate(conn, sub_id)
             continue
-        curr = await registry.fetch_for(row["flight"], row["date"], row["direction"])
+        curr = await registry.fetch_for(row["flight"], row["date"], row["direction"],
+                                        prefer=row["source"])
         if curr is None:
             # рейса пока нет на табло — не ошибка, ждём следующего круга
             storage.set_next(conn, sub_id, epoch + near)

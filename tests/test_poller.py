@@ -29,7 +29,7 @@ class _Sends:
 
 
 def _fixed(snap, monkeypatch):
-    async def fake(flight_no, date, direction):
+    async def fake(flight_no, date, direction, prefer=None):
         return snap
     monkeypatch.setattr(registry, "fetch_for", fake)
 
@@ -92,7 +92,7 @@ def test_expires_a_day_after_flight_date(monkeypatch):
     storage.add(conn, 42, "SU2128", "2026-09-06")
     send = _Sends()
 
-    async def none(flight_no, date, direction):
+    async def none(flight_no, date, direction, prefer=None):
         return None
     monkeypatch.setattr(registry, "fetch_for", none)
     _run(conn, send, datetime(2026, 9, 7, 23, 0, tzinfo=MSK))     # ещё ждём

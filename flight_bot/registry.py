@@ -14,12 +14,13 @@ from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.airlabs import AirlabsSource
 from flight_bot.sources.base import AirportResolver, FlightSource
+from flight_bot.sources.dme import DmeSource
 from flight_bot.sources.svo import SvoSource
 
 DIRECTIONS = ("departure", "arrival")
 
 # Настроенные табло. Добавление источника = одна строка здесь.
-SOURCES: List[FlightSource] = [SvoSource()]
+SOURCES: List[FlightSource] = [SvoSource(), DmeSource()]
 
 
 def configure(settings: Settings) -> None:
@@ -55,9 +56,16 @@ def upcoming(snaps: List[FlightSnapshot], today: Optional[date] = None) -> List[
     return list(seen.values())
 
 
-async def fetch_for(flight_no: str, date: str, direction: str) -> Optional[FlightSnapshot]:
-    """Снимок конкретного рейса на дату и направление — для опроса подписки."""
-    for src in SOURCES:
+async def fetch_for(flight_no: str, date: str, direction: str,
+                    prefer: Optional[str] = None) -> Optional[FlightSnapshot]:
+    """Снимок конкретного рейса на дату и направление — для опроса подписки.
+
+    prefer — имя источника, где рейс нашли при подписке: его опрашиваем первым,
+    остальные — только если он рейс потерял. Иначе с ростом числа табло каждый
+    опрос ходил бы по всем подряд.
+    """
+    ordered = sorted(SOURCES, key=lambda s: 0 if s.name == prefer else 1)
+    for src in ordered:
         try:
             snaps = await src.fetch(flight_no, date, direction)
         except Exception:  # noqa: BLE001

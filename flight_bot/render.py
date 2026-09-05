@@ -62,8 +62,14 @@ def _desks(desks: str) -> str:
     return re.sub(r",\s*", ", ", desks) if desks else "—"
 
 
+def endpoints(s: FlightSnapshot):
+    """Код аэропорта, а без него — город: DME отдаёт только русские названия."""
+    return (s.origin_iata or s.origin_city, s.dest_iata or s.dest_city)
+
+
 def route_line(s: FlightSnapshot) -> str:
-    return f"{s.flight} · {s.origin_iata}→{s.dest_iata} · {s.date[8:10]}.{s.date[5:7]}"
+    o, d = endpoints(s)
+    return f"{s.flight} · {o}→{d} · {s.date[8:10]}.{s.date[5:7]}"
 
 
 def _dot(s: FlightSnapshot) -> str:

@@ -19,7 +19,7 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
 from flight_bot import registry, storage
-from flight_bot.render import route_line, status_card
+from flight_bot.render import endpoints, status_card
 
 router = Router()
 
@@ -70,8 +70,8 @@ async def on_flight_number(message: Message) -> None:
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"{s.date[8:10]}.{s.date[5:7]} · {s.origin_iata}→{s.dest_iata}",
-            callback_data=f"sub|{flight}|{s.date}|{s.direction}")]
+            text=f"{s.date[8:10]}.{s.date[5:7]} · {'→'.join(endpoints(s))}",
+            callback_data=f"sub|{flight}|{s.date}|{s.direction}|{s.source}")]
         for s in snaps
     ])
     await message.answer(f"Нашёл {flight}. На какую дату следить?", reply_markup=kb)
@@ -79,9 +79,11 @@ async def on_flight_number(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("sub|"))
 async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
-    _, flight, date, direction = cb.data.split("|", 3)
-    storage.add(conn, cb.message.chat.id, flight, date, direction)
-    snap = await registry.fetch_for(flight, date, direction)
+    parts = cb.data.split("|")
+    flight, date, direction = parts[1], parts[2], parts[3]
+    source = parts[4] if len(parts) > 4 else ""
+    storage.add(conn, cb.message.chat.id, flight, date, direction, source)
+    snap = await registry.fetch_for(flight, date, direction, prefer=source)
     text = "✅ Подписал. Текущий статус:\n\n" + status_card(snap) if snap \
         else f"✅ Подписал на {flight} {date}."
     await cb.message.edit_text(text)

@@ -23,9 +23,16 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     created_at TEXT    NOT NULL,
     last_json  TEXT,
     next_at    INTEGER NOT NULL DEFAULT 0,   -- epoch следующего опроса (адаптивный)
+    source     TEXT    NOT NULL DEFAULT '',  -- где рейс нашли при подписке (опрашиваем первым)
     UNIQUE(chat_id, flight, date)
 );
 """
+
+# Колонки, добавленные после первого релиза: CREATE IF NOT EXISTS их в живую
+# базу не принесёт, поэтому доливаем ALTER'ом.
+_MIGRATIONS = {
+    "source": "ALTER TABLE subscriptions ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+}
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -33,19 +40,24 @@ def connect(path: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(subscriptions)")}
+    for col, ddl in _MIGRATIONS.items():
+        if col not in have:
+            conn.execute(ddl)
+    conn.commit()
     return conn
 
 
 def add(conn: sqlite3.Connection, chat_id: int, flight: str, date: str,
-        direction: str = "departure") -> int:
+        direction: str = "departure", source: str = "") -> int:
     """Подписать (или реактивировать, если та же уже была). Возвращает id."""
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
-        """INSERT INTO subscriptions (chat_id, flight, date, direction, active, created_at)
-           VALUES (?, ?, ?, ?, 1, ?)
+        """INSERT INTO subscriptions (chat_id, flight, date, direction, active, created_at, source)
+           VALUES (?, ?, ?, ?, 1, ?, ?)
            ON CONFLICT(chat_id, flight, date)
-           DO UPDATE SET active=1, direction=excluded.direction""",
-        (chat_id, flight.upper(), date, direction, now),
+           DO UPDATE SET active=1, direction=excluded.direction, source=excluded.source""",
+        (chat_id, flight.upper(), date, direction, now, source),
     )
     conn.commit()
     row = conn.execute(
