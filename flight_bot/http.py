@@ -50,10 +50,13 @@ class Renderer:
     def enabled(self) -> bool:
         return bool(self.base_url)
 
-    async def render(self, url: str, wait_ms: int = 8000, selector: Optional[str] = None) -> str:
+    async def render(self, url: str, wait_ms: int = 8000, selector: Optional[str] = None,
+                     click: Optional[str] = None) -> str:
         params = {"url": url, "wait": str(wait_ms)}
         if selector:
             params["selector"] = selector
+        if click:
+            params["click"] = click
         async with self._factory() as client:
             r = await client.get(f"{self.base_url}/render", params=params,
                                  timeout=httpx.Timeout(self._timeout))

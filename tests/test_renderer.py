@@ -24,11 +24,13 @@ def test_render_request_shape():
     _Client.calls.clear()
     r = Renderer("http://127.0.0.1:8765/", client_factory=lambda **kw: _Client())
     assert r.enabled
-    html = asyncio.run(r.render("https://www.vnukovo.ru/x", wait_ms=12000, selector="table"))
+    html = asyncio.run(r.render("https://www.vnukovo.ru/x", wait_ms=12000, selector="table",
+                                click='button:has-text("Прилёт")'))
     assert html == "<html>ok</html>"
     url, p = _Client.calls[0]
     assert url == "http://127.0.0.1:8765/render"
-    assert p == {"url": "https://www.vnukovo.ru/x", "wait": "12000", "selector": "table"}
+    assert p == {"url": "https://www.vnukovo.ru/x", "wait": "12000", "selector": "table",
+                 "click": 'button:has-text("Прилёт")'}
 
 
 def test_disabled_without_base_url():

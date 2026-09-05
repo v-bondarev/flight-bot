@@ -5,6 +5,7 @@
 Слушает только localhost; наружу — через SSH-туннель (-L) с сервера бота.
 
     GET /render?url=<https://…>&wait=<мс после загрузки>&selector=<css, ждать>
+               &click=<селектор, нажать после загрузки>   (напр. переключатель «Прилёт»)
     → {"url": <финальный url>, "html": <content>}
 """
 import asyncio
@@ -24,6 +25,7 @@ async def render(request: web.Request) -> web.Response:
         return web.json_response({"error": "url"}, status=400)
     wait = min(int(request.query.get("wait", "8000")), 30000)
     selector = request.query.get("selector")
+    click = request.query.get("click")
     async with _one_at_a_time:
         async with async_playwright() as p:
             browser = await p.chromium.launch(args=["--no-sandbox"])
@@ -39,6 +41,14 @@ async def render(request: web.Request) -> web.Response:
                 if selector:
                     try:
                         await page.wait_for_selector(selector, timeout=15000)
+                    except Exception:  # noqa: BLE001
+                        pass
+                if click:
+                    # Переключатели без URL (VKO «Прилёт»): нажать и дать таблице перерисоваться.
+                    await page.click(click, timeout=15000)
+                    await page.wait_for_timeout(3000)
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=10000)
                     except Exception:  # noqa: BLE001
                         pass
                 return web.json_response({"url": page.url, "html": await page.content()})

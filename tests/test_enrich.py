@@ -8,8 +8,9 @@ from flight_bot.sources.airlabs import AirlabsSource
 
 
 def _snap(**kw):
+    # Город намеренно вне справочника: проверяем именно ветку AirLabs.
     base = dict(flight="S71055", date="2026-09-05", direction="departure",
-                origin_iata="DME", dest_iata="", dest_city="Казань", status="")
+                origin_iata="DME", dest_iata="", dest_city="Тридевятск", status="")
     base.update(kw)
     return FlightSnapshot(**base)
 
@@ -31,7 +32,7 @@ def test_enrich_fills_missing_iata_and_caches(monkeypatch):
     registry._iata_cache.clear()
     out = asyncio.run(registry.enrich_iata([_snap(), _snap(date="2026-09-06")]))
     assert [s.dest_iata for s in out] == ["KZN", "KZN"]
-    assert out[0].dest_city == "Казань"          # город не трогаем
+    assert out[0].dest_city == "Тридевятск"      # город табло не трогаем
     assert al.calls == 1                          # второй снимок — из кэша
 
 

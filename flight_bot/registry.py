@@ -11,6 +11,7 @@ import dataclasses
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
+from flight_bot import airports
 from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.airlabs import AirlabsSource
@@ -18,11 +19,12 @@ from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.dme import DmeSource
 from flight_bot.sources.led import LedSource
 from flight_bot.sources.svo import SvoSource
+from flight_bot.sources.vko import VkoSource
 
 DIRECTIONS = ("departure", "arrival")
 
 # Настроенные табло. Добавление источника = одна строка здесь.
-SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource()]
+SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource(), VkoSource()]
 
 
 def configure(settings: Settings) -> None:
@@ -30,10 +32,13 @@ def configure(settings: Settings) -> None:
     Табло, ходящие через Fetcher, получают ключ scrape.do как запасной транспорт."""
     from flight_bot import http
     http.SCRAPEDO_LIMIT = settings.scrapedo_concurrency
+    from flight_bot.http import Renderer
     for src in SOURCES:
         if hasattr(src, "fetcher"):
             src.fetcher.api_key = settings.scrapedo_api_key
             src.fetcher.ru_proxy_url = settings.ru_proxy_url
+        if hasattr(src, "renderer"):
+            src.renderer = Renderer(settings.render_url)
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
 
@@ -43,12 +48,24 @@ def configure(settings: Settings) -> None:
 _iata_cache: Dict[str, Tuple[str, str]] = {}
 
 
-async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
-    """Дополнить IATA там, где табло дало только город (DME): берём у AirLabs.
+def _fill_places(s: FlightSnapshot) -> FlightSnapshot:
+    """Код по городу и город по коду из справочника — везде «KZN Казань»."""
+    return dataclasses.replace(
+        s,
+        origin_iata=s.origin_iata or airports.iata(s.origin_city) or "",
+        dest_iata=s.dest_iata or airports.iata(s.dest_city) or "",
+        origin_city=s.origin_city or airports.city(s.origin_iata) or "",
+        dest_city=s.dest_city or airports.city(s.dest_iata) or "",
+    )
 
-    Доверяем только если известная нам сторона совпала (для вылета из DME
-    AirLabs тоже должен показать DME отправлением) — иначе это другое плечо.
+
+async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
+    """Дополнить код/город: сперва справочник, затем — для кода — AirLabs.
+
+    AirLabs доверяем только если известная нам сторона совпала (для вылета из
+    DME он тоже должен показать DME отправлением) — иначе это другое плечо.
     """
+    snaps = [_fill_places(s) for s in snaps]
     airlabs = next((s for s in SOURCES if isinstance(s, AirlabsSource)), None)
     if airlabs is None:
         return snaps
@@ -66,7 +83,8 @@ async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
         o, d = _iata_cache[s.flight]
         known_ok = (s.origin_iata and s.origin_iata == o) or (s.dest_iata and s.dest_iata == d)
         if known_ok:
-            s = dataclasses.replace(s, origin_iata=s.origin_iata or o, dest_iata=s.dest_iata or d)
+            s = _fill_places(dataclasses.replace(s, origin_iata=s.origin_iata or o,
+                                                 dest_iata=s.dest_iata or d))
         out.append(s)
     return out
 
