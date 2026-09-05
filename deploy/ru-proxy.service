@@ -1,0 +1,26 @@
+# SSH-туннель riga → msk-waf с SOCKS на localhost: свой RU-выход для табло,
+# которые не пускают riga (dme.ru). На msk-waf ничего не ставится — прокси
+# делает сам sshd. Требования: autossh на riga, ключ vbondarev@riga в
+# authorized_keys root@msk-waf, Host msk-waf в ~/.ssh/config пользователя.
+#   sudo apt install autossh
+#   sudo cp /opt/flight-bot/deploy/ru-proxy.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ru-proxy
+#   curl -x socks5h://127.0.0.1:1080 -sS -o /dev/null -w '%{http_code}\n' https://www.dme.ru/
+[Unit]
+Description=ru-proxy — SOCKS через msk-waf для flight-bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vbondarev
+Environment=AUTOSSH_GATETIME=0
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
+  -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+  -D 127.0.0.1:1080 msk-waf
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

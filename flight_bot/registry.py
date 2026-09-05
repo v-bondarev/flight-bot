@@ -27,10 +27,10 @@ SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource()]
 def configure(settings: Settings) -> None:
     """Источники с ключами — в конец списка: табло богаче, они первые.
     Табло, ходящие через Fetcher, получают ключ scrape.do как запасной транспорт."""
-    if settings.scrapedo_api_key:
-        for src in SOURCES:
-            if hasattr(src, "fetcher"):
-                src.fetcher.api_key = settings.scrapedo_api_key
+    for src in SOURCES:
+        if hasattr(src, "fetcher"):
+            src.fetcher.api_key = settings.scrapedo_api_key
+            src.fetcher.ru_proxy_url = settings.ru_proxy_url
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
 

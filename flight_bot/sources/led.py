@@ -125,8 +125,7 @@ class LedSource(FlightSource):
     name = "pulkovoairport.ru"
 
     def __init__(self, scrapedo_api_key: str = "", timeout: float = 20.0):
-        self._timeout = timeout
-        self.fetcher = Fetcher(scrapedo_api_key, timeout)
+        self.fetcher = Fetcher(scrapedo_api_key, timeout=timeout)
 
     async def fetch(
         self,
@@ -134,7 +133,6 @@ class LedSource(FlightSource):
         date: Optional[str] = None,
         direction: str = "departure",
     ) -> List[FlightSnapshot]:
-        import httpx  # ленивый импорт: тесты парсера не тянут сеть
         import json
 
         wanted = canon(flight_no)
@@ -148,14 +146,12 @@ class LedSource(FlightSource):
         else:
             whens = [0, 1, -1]
         out: List[FlightSnapshot] = []
-        async with httpx.AsyncClient(timeout=self._timeout,
-                                     headers={"User-Agent": UA, "Accept": "application/json"}) as client:
-            for when in whens:
-                text = await self.fetcher.get(client, BASE_URL, {
-                    "type": direction, "when": str(when), "search": digits})
-                try:
-                    payload = json.loads(text)
-                except ValueError:
-                    continue
-                out += [s for s in parse(payload, wanted, direction) if not date or s.date == date]
+        for when in whens:
+            text = await self.fetcher.get(BASE_URL, {
+                "type": direction, "when": str(when), "search": digits})
+            try:
+                payload = json.loads(text)
+            except ValueError:
+                continue
+            out += [s for s in parse(payload, wanted, direction) if not date or s.date == date]
         return out
