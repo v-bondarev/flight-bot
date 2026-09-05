@@ -61,17 +61,30 @@ def expired(date: str, now: datetime) -> bool:
     return now >= day + timedelta(days=1 + EXPIRE_DAYS)
 
 
+async def _fetch(row: sqlite3.Row) -> Optional[FlightSnapshot]:
+    try:
+        return await registry.fetch_for(row["flight"], row["date"], row["direction"],
+                                        prefer=row["source"])
+    except Exception:  # noqa: BLE001 — один источник не должен ронять весь круг
+        log.exception("опрос %s %s упал", row["flight"], row["date"])
+        return None
+
+
 async def poll_once(conn: sqlite3.Connection, send: Send,
                     now: Optional[datetime] = None, near: int = 300) -> None:
     now = now or datetime.now(timezone.utc)
     epoch = int(now.timestamp())
+    rows = []
     for row in storage.due(conn, epoch):
-        sub_id = row["id"]
         if expired(row["date"], now):
-            storage.deactivate(conn, sub_id)
-            continue
-        curr = await registry.fetch_for(row["flight"], row["date"], row["direction"],
-                                        prefer=row["source"])
+            storage.deactivate(conn, row["id"])
+        else:
+            rows.append(row)
+    # Опрашиваем параллельно: табло через scrape.do отвечает десятки секунд,
+    # по очереди одна медленная подписка тормозила бы все остальные.
+    snaps = await asyncio.gather(*(_fetch(r) for r in rows))
+    for row, curr in zip(rows, snaps):
+        sub_id = row["id"]
         if curr is None:
             # рейса пока нет на табло — не ошибка, ждём следующего круга
             storage.set_next(conn, sub_id, epoch + near)
