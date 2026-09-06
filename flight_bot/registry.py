@@ -39,6 +39,10 @@ def configure(settings: Settings) -> None:
             src.fetcher.ru_proxy_url = settings.ru_proxy_url
         if hasattr(src, "renderer"):
             src.renderer = Renderer(settings.render_url, cache_sec=settings.render_cache_sec)
+        if isinstance(src, VkoSource):
+            from flight_bot.vko_client import VkoClient
+            src.api = VkoClient(ru_proxy_url=settings.ru_proxy_url,
+                                cache_sec=settings.render_cache_sec)
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
 

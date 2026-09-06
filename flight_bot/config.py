@@ -16,8 +16,8 @@ class Settings:
     airlabs_api_key: str        # статус/маршрут по номеру вне наших табло; пусто — не используем
     ru_proxy_url: str           # свой RU-выход для табло (socks5://127.0.0.1:1080 SSH-туннель до RU-хоста); пусто — сразу scrape.do
     scrapedo_concurrency: int   # одновременных запросов к scrape.do (кредиты платные)
-    render_url: str             # рендер-сервис (deploy/render) через туннель; пусто — табло за JS недоступны
-    render_cache_sec: int       # кэш отрендеренной страницы табло: одна на все подписки аэропорта
+    render_url: str             # резервный рендер VKO через туннель; основной путь — HTTP API
+    render_cache_sec: int       # TTL кэша VKO HTTP-поиска и резервного HTML-рендера
 
 
 def load_env(path: str = ".env") -> None:

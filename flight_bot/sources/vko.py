@@ -1,8 +1,7 @@
-"""Источник: онлайн-табло Внуково (VKO). Только через рендер-сервис.
+"""Источник: онлайн-табло Внуково (VKO). HTTP API, рендер — резерв.
 
-Табло отдаёт контент лишь браузеру (JS-челлендж → куки → reload), поэтому
-HTML берём у deploy/render: страница исполняется как у посетителя, ничего не
-эмулируем. Без RENDER_URL источник молчит (VKO остаётся на AirLabs).
+VkoClient проходит известный JS-челлендж, сохраняет cookies и читает REST.
+При ошибке API берём HTML у deploy/render, если задан RENDER_URL.
 
 Строка табло (Vue): <a class="timetable__row" href=".../online-tablo/<id>">
   <time>HH:MM</time> + «5 сентября» · Город + IATA (fl-airport-code) ·
@@ -16,15 +15,19 @@ HTML берём у deploy/render: страница исполняется как
 from __future__ import annotations
 
 import html as _html
+import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
+import httpx
+
 from flight_bot.http import Renderer
 from flight_bot.models import Boarding, Checkin, FlightSnapshot, Leg
 from flight_bot.sources.base import FlightSource
+from flight_bot.vko_client import BOARD_URL, VkoClient, VkoProtocolError
 
-BOARD_URL = "https://www.vnukovo.ru/ru/for-passengers/reysi/online-tablo/"
+log = logging.getLogger(__name__)
 # URL-параметров у табло нет: «Прилёт» — кнопка-переключатель, её нажимает
 # рендер-сервис. Табло показывает сегодня и завтра одной страницей.
 ARRIVAL_CLICK = 'button:has-text("Прилёт")'
@@ -161,11 +164,75 @@ def parse(page: str, flight_no: str, today: date) -> List[FlightSnapshot]:
     return [build(r, direction, wanted) for r in parse_board(page, today) if wanted in r["numbers"]]
 
 
+def _api_time(value, offset=3) -> Optional[str]:
+    if not value or offset is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+        return dt.replace(tzinfo=timezone(timedelta(hours=float(offset)))).isoformat()
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _api_list(value) -> str:
+    return ','.join(str(v) for v in value) if isinstance(value, list) else str(value or '')
+
+
+def parse_api(rows: List[dict], flight_no: str, direction: str) -> List[FlightSnapshot]:
+    wanted = canon(flight_no)
+    out = []
+    for row in rows:
+        if not all(k in row for k in ('bound', 'flt_number', 'st', 'flt_id')):
+            raise VkoProtocolError('Missing VKO flight fields')
+        numbers = [row['flt_number']] + (row.get('codeshare') or [])
+        if row['bound'] != (0 if direction == 'departure' else 1):
+            continue
+        if wanted not in [canon(n) for n in numbers]:
+            continue
+        own = Leg(plan=_api_time(row.get('st')), est=_api_time(row.get('et')),
+                  fact=_api_time(row.get('at')))
+        if not own.plan:
+            raise VkoProtocolError('Missing VKO flight date')
+        offset = row.get('fls_time_difference_hours_utc')
+        other = Leg(plan=_api_time(row.get('fls_st'), offset),
+                    est=_api_time(row.get('fls_et'), offset),
+                    fact=_api_time(row.get('fls_at'), offset))
+        dep = direction == 'departure'
+        checkin = Checkin()
+        boarding = Boarding()
+        if dep:
+            checkin = Checkin(desks=_api_list(row.get('checkins')),
+                              start_plan=_api_time(row.get('checkins_sst')),
+                              finish_plan=_api_time(row.get('checkins_set')),
+                              start_fact=_api_time(row.get('checkins_ast')),
+                              finish_fact=_api_time(row.get('checkins_aet')))
+            # gates_st/et are not labelled actual in the API. Do not turn
+            # scheduled gate times into boarding-start/finish notifications.
+            boarding = Boarding(start_min=_minutes_before(own.plan, _api_time(row.get('gates_st'))))
+        via = ', '.join(' '.join(filter(None, (p.get('fls_iata'), p.get('fls_city_name'))))
+                        for p in row.get('transfers') or [] if isinstance(p, dict))
+        out.append(FlightSnapshot(
+            flight=wanted, date=own.plan[:10], direction=direction,
+            origin_iata='VKO' if dep else row.get('fls_iata') or '',
+            dest_iata=row.get('fls_iata') or '' if dep else 'VKO',
+            origin_city='Москва' if dep else row.get('fls_city_name') or '',
+            dest_city=row.get('fls_city_name') or '' if dep else 'Москва',
+            departure=own if dep else other, arrival=other if dep else own,
+            checkin=checkin, boarding=boarding, via=via,
+            status='Отменён' if row.get('cancelled') else row.get('status') or '',
+            airline=row.get('airline_name') or '',
+            aircraft=(row.get('aircraft') or {}).get('name') or '',
+            terminal=row.get('terminal') or '', gate=_api_list(row.get('gates')),
+            baggage_belt=row.get('belt') or '', source='vnukovo.ru', key=str(row['flt_id'])))
+    return out
+
+
 class VkoSource(FlightSource):
     name = "vnukovo.ru"
 
-    def __init__(self, renderer: Optional[Renderer] = None):
+    def __init__(self, renderer: Optional[Renderer] = None, api: Optional[VkoClient] = None):
         self.renderer = renderer or Renderer("")
+        self.api = api or VkoClient()
 
     async def fetch(
         self,
@@ -173,8 +240,18 @@ class VkoSource(FlightSource):
         date: Optional[str] = None,
         direction: str = "departure",
     ) -> List[FlightSnapshot]:
-        if not self.renderer.enabled:
+        wanted = canon(flight_no)
+        if not re.fullmatch(r'[A-Z0-9]{2}\d{1,4}', wanted):
             return []
+        if direction not in ('departure', 'arrival'):
+            raise ValueError('Invalid direction')
+        try:
+            rows = await self.api.flights(wanted, direction)
+            return [s for s in parse_api(rows, wanted, direction) if not date or s.date == date]
+        except (httpx.HTTPError, VkoProtocolError):
+            if not self.renderer.enabled:
+                raise
+            log.warning('VKO API unavailable; using browser renderer')
         today = datetime.now(MSK).date()
         page = await self.renderer.render(BOARD_URL, wait_ms=12000, selector="a.timetable__row",
                                           click=ARRIVAL_CLICK if direction == "arrival" else None)

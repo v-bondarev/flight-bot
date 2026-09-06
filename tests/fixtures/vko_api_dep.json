@@ -1,0 +1,223 @@
+{
+  "results": {
+    "datetime": "2026-09-06 09:00:08",
+    "dateMin": "2026-09-04 00:00:00",
+    "dateMax": "2026-09-08 23:59:59",
+    "dateFrom": "2026-09-06 09:00:08",
+    "search": "UT571",
+    "requestedSearch": "UT571",
+    "flights": [
+      {
+        "bound": 0,
+        "flt_id": 101132896,
+        "flt_number": "ЮТ 571",
+        "fls_id": "КЯА",
+        "fls_iata": "KJA",
+        "fls_st": "2026-09-05 02:00:00",
+        "fls_et": "2026-09-05 02:14:00",
+        "fls_at": "2026-09-05 02:09:00",
+        "fls_time_difference_hours": 4,
+        "fls_time_difference_hours_utc": 7,
+        "st": "2026-09-04 21:25:00",
+        "et": "2026-09-04 21:25:00",
+        "at": "2026-09-04 21:53:00",
+        "terminal": "А",
+        "category_with_sng": "РОС",
+        "checkins_sst": "2026-09-04 15:25:00",
+        "checkins_set": "2026-09-04 20:45:00",
+        "checkins_ast": "2026-09-04 15:25:00",
+        "checkins_aet": "2026-09-04 20:45:00",
+        "gates_st": "2026-09-04 20:59:00",
+        "gates_et": "2026-09-04 21:18:00",
+        "gates": [
+          "13"
+        ],
+        "updatedon": "2026-09-06 08:59:00",
+        "delayed": false,
+        "cancelled": false,
+        "flt_status_remark": null,
+        "belt": null,
+        "belt_start": null,
+        "belt_end": null,
+        "codeshare": [
+          "В2 2271"
+        ],
+        "transfers": [],
+        "icon": "airplane2",
+        "combine": [],
+        "checkins": null,
+        "checkins_regular": null,
+        "checkins_business": null,
+        "checkins_drop_off": null,
+        "checkins_total": 0,
+        "status": "Совершил посадку",
+        "fls_name": "Емельяново",
+        "fls_city_name": "Красноярск",
+        "fls_full_name": "Красноярск (Емельяново)",
+        "country": {
+          "iso": "RU",
+          "name": "Россия",
+          "content": null,
+          "dial_code": "7",
+          "area_codes": null
+        },
+        "airline_name": "Utair",
+        "airline_resource_id": 173,
+        "aircraft": {
+          "icao": "B738",
+          "name": "Boeing 737-800",
+          "image": "https://www.vnukovo.ru/uploads/content/aircrafts/737-800.png"
+        },
+        "airline_livery": {
+          "large": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-f5200baecc8cea901ffef6081bf90f5a.png",
+          "large_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-f5200baecc8cea901ffef6081bf90f5a.png",
+          "medium": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-ec2d9efa5815c4c84e9c98082b1fcad4.png",
+          "medium_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-ec2d9efa5815c4c84e9c98082b1fcad4.png",
+          "small": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-b0c4fcb57174f2a94366e580ed843ff5.png",
+          "small_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-b0c4fcb57174f2a94366e580ed843ff5.png"
+        }
+      },
+      {
+        "bound": 0,
+        "flt_id": 101133367,
+        "flt_number": "ЮТ 571",
+        "fls_id": "КЯА",
+        "fls_iata": "KJA",
+        "fls_st": "2026-09-06 02:00:00",
+        "fls_et": "2026-09-06 01:59:00",
+        "fls_at": "2026-09-06 02:02:00",
+        "fls_time_difference_hours": 4,
+        "fls_time_difference_hours_utc": 7,
+        "st": "2026-09-05 21:25:00",
+        "et": "2026-09-05 21:25:00",
+        "at": "2026-09-05 21:52:00",
+        "terminal": "А",
+        "category_with_sng": "РОС",
+        "checkins_sst": "2026-09-05 15:25:00",
+        "checkins_set": "2026-09-05 20:45:00",
+        "checkins_ast": "2026-09-05 15:25:00",
+        "checkins_aet": "2026-09-05 20:45:00",
+        "gates_st": "2026-09-05 20:59:00",
+        "gates_et": "2026-09-05 21:18:00",
+        "gates": [
+          "15"
+        ],
+        "updatedon": "2026-09-06 08:59:00",
+        "delayed": false,
+        "cancelled": false,
+        "flt_status_remark": null,
+        "belt": null,
+        "belt_start": null,
+        "belt_end": null,
+        "codeshare": [
+          "В2 2271"
+        ],
+        "transfers": [],
+        "icon": "airplane2",
+        "combine": [],
+        "checkins": null,
+        "checkins_regular": null,
+        "checkins_business": null,
+        "checkins_drop_off": null,
+        "checkins_total": 0,
+        "status": "Совершил посадку",
+        "fls_name": "Емельяново",
+        "fls_city_name": "Красноярск",
+        "fls_full_name": "Красноярск (Емельяново)",
+        "country": {
+          "iso": "RU",
+          "name": "Россия",
+          "content": null,
+          "dial_code": "7",
+          "area_codes": null
+        },
+        "airline_name": "Utair",
+        "airline_resource_id": 173,
+        "aircraft": {
+          "icao": "B738",
+          "name": "Boeing 737-800",
+          "image": "https://www.vnukovo.ru/uploads/content/aircrafts/737-800.png"
+        },
+        "airline_livery": {
+          "large": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-f5200baecc8cea901ffef6081bf90f5a.png",
+          "large_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-f5200baecc8cea901ffef6081bf90f5a.png",
+          "medium": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-ec2d9efa5815c4c84e9c98082b1fcad4.png",
+          "medium_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-ec2d9efa5815c4c84e9c98082b1fcad4.png",
+          "small": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-b0c4fcb57174f2a94366e580ed843ff5.png",
+          "small_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-b0c4fcb57174f2a94366e580ed843ff5.png"
+        }
+      },
+      {
+        "bound": 0,
+        "flt_id": 101133829,
+        "flt_number": "ЮТ 571",
+        "fls_id": "КЯА",
+        "fls_iata": "KJA",
+        "fls_st": "2026-09-07 02:00:00",
+        "fls_et": "2026-09-07 02:00:00",
+        "fls_at": null,
+        "fls_time_difference_hours": 4,
+        "fls_time_difference_hours_utc": 7,
+        "st": "2026-09-06 21:25:00",
+        "et": "2026-09-06 21:25:00",
+        "at": null,
+        "terminal": "А",
+        "category_with_sng": "РОС",
+        "checkins_sst": "2026-09-06 15:25:00",
+        "checkins_set": "2026-09-06 20:45:00",
+        "checkins_ast": null,
+        "checkins_aet": null,
+        "gates_st": "2026-09-06 20:59:00",
+        "gates_et": "2026-09-06 21:18:00",
+        "gates": [
+          "12"
+        ],
+        "updatedon": "2026-09-06 08:59:00",
+        "delayed": false,
+        "cancelled": false,
+        "flt_status_remark": null,
+        "belt": null,
+        "belt_start": null,
+        "belt_end": null,
+        "codeshare": [
+          "В2 2271"
+        ],
+        "transfers": [],
+        "icon": "waiting",
+        "combine": [],
+        "checkins": null,
+        "checkins_regular": null,
+        "checkins_business": null,
+        "checkins_drop_off": null,
+        "checkins_total": 0,
+        "status": "Регистрация с 15:25",
+        "fls_name": "Емельяново",
+        "fls_city_name": "Красноярск",
+        "fls_full_name": "Красноярск (Емельяново)",
+        "country": {
+          "iso": "RU",
+          "name": "Россия",
+          "content": null,
+          "dial_code": "7",
+          "area_codes": null
+        },
+        "airline_name": "Utair",
+        "airline_resource_id": 173,
+        "aircraft": {
+          "icao": "B738",
+          "name": "Boeing 737-800",
+          "image": "https://www.vnukovo.ru/uploads/content/aircrafts/737-800.png"
+        },
+        "airline_livery": {
+          "large": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-f5200baecc8cea901ffef6081bf90f5a.png",
+          "large_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-f5200baecc8cea901ffef6081bf90f5a.png",
+          "medium": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-ec2d9efa5815c4c84e9c98082b1fcad4.png",
+          "medium_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-ec2d9efa5815c4c84e9c98082b1fcad4.png",
+          "small": "https://www.vnukovo.ru/uploads/content/assets/crops/utair-b0c4fcb57174f2a94366e580ed843ff5.png",
+          "small_webp": "https://www.vnukovo.ru/thumbs/webp/uploads/content/assets/crops/utair-b0c4fcb57174f2a94366e580ed843ff5.png"
+        }
+      }
+    ]
+  },
+  "total": 3
+}
