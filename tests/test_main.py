@@ -81,3 +81,15 @@ def test_request_urls_with_keys_do_not_reach_the_log(caplog):
     with caplog.at_level(logging.INFO):
         logging.getLogger("httpx").warning("connection pool full")
     assert "connection pool full" in caplog.text            # предупреждения httpx не теряем
+
+
+def test_log_formatter_redacts_keys_even_in_tracebacks():
+    import logging
+    rec = logging.LogRecord("x", logging.ERROR, __file__, 1, "опрос упал: %s", ("api_key=SECRET",), None)
+    try:
+        raise RuntimeError("for url 'https://api.scrape.do/?token=TOKEN42&url=y'")
+    except RuntimeError:
+        import sys
+        rec.exc_info = sys.exc_info()
+    out = main._RedactingFormatter("%(message)s").format(rec)
+    assert "SECRET" not in out and "TOKEN42" not in out and "[скрыто]" in out

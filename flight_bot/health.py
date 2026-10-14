@@ -13,7 +13,9 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, Optional, Set
+
+from flight_bot.http import describe
 
 log = logging.getLogger("flight_bot.health")
 MSK = timezone(timedelta(hours=3))
@@ -35,11 +37,14 @@ class Health:
         self.notify, self._clock = notify, clock
         self.fails_needed, self.after_sec = fails, after_sec
         self._state: Dict[str, _State] = {}
+        self._tasks: Set["asyncio.Future"] = set()
 
     def _send(self, text: str) -> None:
         log.warning(text)
         if self.notify is not None:
-            asyncio.ensure_future(self.notify(text))
+            task = asyncio.ensure_future(self.notify(text))
+            self._tasks.add(task)                  # держим ссылку, иначе задачу соберёт GC
+            task.add_done_callback(self._tasks.discard)
 
     def fail(self, source: str, exc: BaseException) -> None:
         st = self._state.setdefault(source, _State())
@@ -50,7 +55,7 @@ class Health:
                 and self._clock() - st.since >= self.after_sec):
             st.alerted = True
             self._send(f"⚠️ Источник {source} не отвечает с {st.since_msk} МСК "
-                       f"({st.fails} ошибок подряд): {type(exc).__name__}: {str(exc)[:200]}")
+                       f"({st.fails} ошибок подряд): {describe(exc)}")
 
     def ok(self, source: str) -> None:
         st = self._state.get(source)

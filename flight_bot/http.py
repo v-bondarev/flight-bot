@@ -11,6 +11,7 @@ dme.ru не отвечает с зарубежного адреса сервер
 from __future__ import annotations
 
 import asyncio
+import re
 import ssl
 import time
 from pathlib import Path
@@ -42,6 +43,28 @@ def _scrapedo_semaphore() -> asyncio.Semaphore:
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 _HOP_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ProxyError)
+
+
+# Значения секретных параметров URL: ключи AirLabs/scrape.do ходят в query-строке.
+_SECRET_RE = re.compile(r"((?:api_key|apikey|token|key|access_token)=)[^&\s'\"]+", re.I)
+
+
+def redact(text: str) -> str:
+    """Вырезать значения секретных параметров из текста (URL в ошибках httpx, трейсбеки)."""
+    return _SECRET_RE.sub(r"\1[скрыто]", text)
+
+
+def describe(exc: BaseException) -> str:
+    """Ошибка для лога и уведомлений без URL: класс, код HTTP, хост."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code} {exc.request.url.host}"
+    if isinstance(exc, httpx.RequestError):
+        try:
+            host = exc.request.url.host
+        except RuntimeError:                       # у ошибки нет запроса
+            host = ""
+        return f"{type(exc).__name__} {host}".strip()
+    return redact(f"{type(exc).__name__}: {exc}")[:200]
 
 
 class SharedFetch:

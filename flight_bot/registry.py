@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 from flight_bot import airports, health, storage
 from flight_bot.config import Settings
+from flight_bot.http import describe
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
 from flight_bot.sources.airlabs import AirlabsSource
@@ -167,7 +168,7 @@ async def _ask(src: FlightSource, flight_no: str, date: Optional[str],
         return await asyncio.wait_for(cached_fetch(src, flight_no, date, direction),
                                       PROBE_TIMEOUT_SEC)
     except Exception as exc:  # noqa: BLE001 — источник отвалился или тормозит: для поиска пусто
-        log.warning("проба %s %s %s: %r", src.name, flight_no, direction, exc)
+        log.warning("проба %s %s %s: %s", src.name, flight_no, direction, describe(exc))
         return []
 
 
@@ -316,7 +317,7 @@ async def fetch_for(flight_no: str, date: str, direction: str,
         try:
             snaps = await cached_fetch(src, flight_no, date, direction)
         except Exception as exc:  # noqa: BLE001 — источник отвалился, пробуем следующий
-            log.warning("опрос %s %s %s %s: %r", src.name, flight_no, date, direction, exc)
+            log.warning("опрос %s %s %s %s: %s", src.name, flight_no, date, direction, describe(exc))
             continue
         same_day = [s for s in snaps if s.date == date]
         if same_day:

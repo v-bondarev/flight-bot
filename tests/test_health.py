@@ -45,3 +45,24 @@ def test_short_burst_or_success_in_between_does_not_alert():
         _run(lambda: h.fail("dme.ru", TimeoutError()))
         _run(lambda: h.ok("dme.ru"))
     assert sent == []
+
+
+def test_alert_and_log_do_not_leak_keys_from_httpx_urls(caplog):
+    import logging
+
+    import httpx
+
+    from flight_bot.http import describe, redact
+    req = httpx.Request("GET", "https://airlabs.co/api/v9/flight?flight_iata=SU1&api_key=SECRET123")
+    exc = httpx.HTTPStatusError("Client error '401' for url '%s'" % req.url, request=req,
+                                response=httpx.Response(401, request=req))
+    assert describe(exc) == "HTTP 401 airlabs.co"
+    now = [0.0]
+    h, sent = _tracker(now)
+    with caplog.at_level(logging.WARNING):
+        for i in range(7):
+            now[0] = i * 400
+            _run(lambda: h.fail("airlabs.co", exc))
+    assert len(sent) == 1 and "SECRET123" not in sent[0] and "SECRET123" not in caplog.text
+    assert redact("GET https://api.scrape.do/?token=ABC123&url=x") == \
+        "GET https://api.scrape.do/?token=[скрыто]&url=x"

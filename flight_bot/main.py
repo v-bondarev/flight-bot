@@ -18,6 +18,7 @@ from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError,
 
 from flight_bot import bot as handlers
 from flight_bot import config, health, poller, registry, storage
+from flight_bot.http import redact
 
 log = logging.getLogger("flight_bot")
 
@@ -55,9 +56,20 @@ def make_send(tg: Bot, conn: sqlite3.Connection) -> poller.Send:
     return send
 
 
+class _RedactingFormatter(logging.Formatter):
+    """Последний рубеж: значения api_key/token вырезаются из любой строки лога, и трейсбеков тоже."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(super().format(record))
+
+
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+
 def setup_logging() -> None:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(_RedactingFormatter(LOG_FORMAT))
     # httpx на INFO пишет каждый запрос с полным URL, а ключи AirLabs/scrape.do — в URL.
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
