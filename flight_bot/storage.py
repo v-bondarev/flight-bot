@@ -59,14 +59,15 @@ def add(conn: sqlite3.Connection, chat_id: int, flight: str, date: str,
         direction: str = "departure", source: str = "",
         thread_id: Optional[int] = None) -> int:
     """Подписать (или реактивировать, если та же уже была). Возвращает id.
-    Повторная подписка переносит пуши в тему, откуда подписались последний раз."""
+    Повторная подписка переносит пуши в тему, откуда подписались последний раз,
+    и опрашивается сразу: старый next_at (до часа) оживлённой строке не нужен."""
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
         """INSERT INTO subscriptions (chat_id, flight, date, direction, active, created_at, source, thread_id)
            VALUES (?, ?, ?, ?, 1, ?, ?, ?)
            ON CONFLICT(chat_id, flight, date)
            DO UPDATE SET active=1, direction=excluded.direction, source=excluded.source,
-                         thread_id=excluded.thread_id""",
+                         thread_id=excluded.thread_id, next_at=0""",
         (chat_id, flight.upper(), date, direction, now, source, thread_id),
     )
     conn.commit()
