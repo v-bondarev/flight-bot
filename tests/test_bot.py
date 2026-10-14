@@ -167,3 +167,7 @@ def test_named_user_is_greeted_formally(monkeypatch):
     assert "Отправьте номер рейса" in said[0] and "тебе" not in said[0]
     assert _feed("/start", 620773, "private", monkeypatch) == [bot.GREETING]   # остальным — как было
     assert _feed("/start", 777, "private", monkeypatch, username="someone") == [bot.GREETING]
+
+
+def test_greeting_escapes_html_in_name():
+    assert "Иван &amp; Пётр" in bot.greeting("Иван & Пётр")

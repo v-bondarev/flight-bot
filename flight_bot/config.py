@@ -58,7 +58,9 @@ def _greet_names(raw: str) -> Dict[str, str]:
     for item in filter(str.strip, raw.split(",")):
         user, sep, name = item.partition("=")
         if not sep or not user.strip() or not name.strip():
-            raise SystemExit(f"GREET_NAMES: ожидается username=Обращение через запятую, а не {item.strip()!r}")
+            # само обращение в лог не пишем — это ПДн
+            raise SystemExit(f"GREET_NAMES: ожидается username=Обращение через запятую "
+                             f"(ошибка у «{user.strip()}»)")
         out[user.strip().lstrip("@").lower()] = name.strip()
     return out
 

@@ -15,6 +15,7 @@ conn прокидывается через workflow-data диспетчера (�
 """
 from __future__ import annotations
 
+import html
 import re
 import sqlite3
 from typing import Dict, FrozenSet, Optional
@@ -73,7 +74,7 @@ NAMES: Dict[str, str] = {}
 
 
 def greeting(name: str) -> str:
-    return (f"👋 Здравствуйте, {name}! Я Гейти!\n"
+    return (f"👋 Здравствуйте, {html.escape(name)}! Я Гейти!\n"
             "✈️ Помогу Вам не пропустить свой рейс.\n"
             "📡 Отслеживаю статус авиарейсов в реальном времени.\n"
             "🔔 Сообщаю о задержках, изменениях расписания и назначении гейта.\n"
