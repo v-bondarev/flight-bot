@@ -1,13 +1,37 @@
-"""Выбор дат для подписки: прошедшие отрезаем, по одной кнопке на дату."""
+"""Выбор дат для подписки: прошедшие отрезаем, по одной кнопке на дату;
+даты, которых нет на табло, добираем из расписания на HORIZON_DAYS вперёд."""
+import asyncio
 from datetime import date
 
+from flight_bot import registry
 from flight_bot.models import FlightSnapshot
 from flight_bot.registry import upcoming
 
+TODAY = date(2026, 10, 14)
 
-def _snap(d, dest="BAH"):
+
+def _snap(d, dest="BAH", source=""):
     return FlightSnapshot(flight="GF013", date=d, direction="departure",
-                          origin_iata="SVO", dest_iata=dest, status="")
+                          origin_iata="SVO", dest_iata=dest, status="", source=source)
+
+
+class _Schedule:
+    """Расписание-заглушка: считает вызовы, чтобы проверить кэш."""
+
+    def __init__(self, snaps):
+        self.snaps, self.calls = snaps, 0
+
+    async def fetch(self, flight_no, date=None, direction="departure"):
+        self.calls += 1
+        return self.snaps
+
+
+def _setup(monkeypatch, boards, schedule):
+    async def probe(flight_no, date=None):
+        return boards
+    monkeypatch.setattr(registry, "probe", probe)
+    monkeypatch.setattr(registry, "SCHEDULE", schedule)
+    monkeypatch.setattr(registry, "_schedule_cache", {})
 
 
 def test_upcoming_drops_past_dates_keeps_today_and_dedups():
@@ -19,3 +43,45 @@ def test_upcoming_drops_past_dates_keeps_today_and_dedups():
 
 def test_upcoming_empty_when_all_past():
     assert upcoming([_snap("2026-09-04")], today=date(2026, 9, 5)) == []
+
+
+def test_search_adds_schedule_dates_missing_on_boards_within_horizon(monkeypatch):
+    days = [f"2026-10-{d}" for d in range(13, 21)]          # 13…20: вчера … +6
+    sched = _Schedule([_snap(d, source="aerodatabox.com") for d in days])
+    _setup(monkeypatch, [_snap("2026-10-14", source="dme.ru"),
+                         _snap("2026-10-15", source="dme.ru")], sched)
+    got = asyncio.run(registry.search("GF013", today=TODAY))
+    assert [s.date for s in got] == [f"2026-10-{d}" for d in range(14, 20)]   # сегодня +5
+    assert [s.source for s in got[:2]] == ["dme.ru", "dme.ru"]   # табло богаче — оно первое
+    assert {s.source for s in got[2:]} == {"aerodatabox.com"}
+
+
+def test_search_without_schedule_key_is_boards_only(monkeypatch):
+    _setup(monkeypatch, [_snap("2026-10-14")], None)
+    got = asyncio.run(registry.search("GF013", today=TODAY))
+    assert [s.date for s in got] == ["2026-10-14"]
+
+
+def test_schedule_is_cached_and_failure_is_not_fatal(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+    asyncio.run(registry.search("GF013", today=TODAY))
+    asyncio.run(registry.search("GF013", today=TODAY))
+    assert sched.calls == 1                                  # запрос платный — кэш
+
+    class _Broken:
+        async def fetch(self, *a, **kw):
+            raise RuntimeError("429")
+    _setup(monkeypatch, [_snap("2026-10-14")], _Broken())
+    assert [s.date for s in asyncio.run(registry.search("GF013", today=TODAY))] == ["2026-10-14"]
+
+
+def test_fetch_for_falls_back_to_cached_schedule_without_new_call(monkeypatch):
+    sched = _Schedule([_snap("2026-10-17", source="aerodatabox.com")])
+    _setup(monkeypatch, [], sched)
+    monkeypatch.setattr(registry, "SOURCES", [])
+    asyncio.run(registry.search("GF013", today=TODAY))
+    got = asyncio.run(registry.fetch_for("GF013", "2026-10-17", "departure"))
+    assert got is not None and got.source == "aerodatabox.com"
+    assert asyncio.run(registry.fetch_for("GF013", "2026-10-18", "departure")) is None
+    assert sched.calls == 1

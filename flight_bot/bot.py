@@ -61,7 +61,7 @@ async def list_subs(message: Message, conn: sqlite3.Connection) -> None:
 @router.message(F.text.regexp(FLIGHT_RE))
 async def on_flight_number(message: Message) -> None:
     flight = message.text.strip().upper().replace(" ", "")
-    snaps = registry.upcoming(await registry.probe(flight))
+    snaps = await registry.search(flight)
     if not snaps:
         await message.answer(
             f"Рейс {flight} не нашёл на доступных табло на ближайшие дни. "

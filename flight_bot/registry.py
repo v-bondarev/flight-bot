@@ -8,12 +8,15 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from flight_bot import airports
 from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
+from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
 from flight_bot.sources.airlabs import AirlabsSource
 from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.dme import DmeSource
@@ -23,8 +26,15 @@ from flight_bot.sources.vko import VkoSource
 
 DIRECTIONS = ("departure", "arrival")
 
+log = logging.getLogger("flight_bot.registry")
+
 # Настроенные табло. Добавление источника = одна строка здесь.
 SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource(), VkoSource()]
+
+# Расписание на даты вперёд (AeroDataBox). Не в SOURCES: запрос платный, в опрос
+# подписок не ходит — только в поиск дат (search), с кэшем на SCHEDULE_TTL_SEC.
+SCHEDULE: Optional[FlightSource] = None
+SCHEDULE_TTL_SEC = 6 * 3600
 
 
 def configure(settings: Settings) -> None:
@@ -45,6 +55,9 @@ def configure(settings: Settings) -> None:
                                 cache_sec=settings.render_cache_sec)
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
+    global SCHEDULE
+    if settings.aerodatabox_api_key:
+        SCHEDULE = AeroDataBoxSource(settings.aerodatabox_api_key)
 
 
 # Маршрут по номеру у AirLabs: (origin, dest). Кэш на процесс — маршрут у
@@ -120,6 +133,38 @@ def upcoming(snaps: List[FlightSnapshot], today: Optional[date] = None) -> List[
     return list(seen.values())
 
 
+# Расписание по номеру: (время запроса, снимки на сегодня…+HORIZON_DAYS).
+_schedule_cache: Dict[str, Tuple[float, List[FlightSnapshot]]] = {}
+
+
+async def schedule(flight_no: str) -> List[FlightSnapshot]:
+    """Даты рейса из расписания; ошибка расписания не ломает поиск по табло."""
+    if SCHEDULE is None:
+        return []
+    hit = _schedule_cache.get(flight_no)
+    if hit and time.monotonic() - hit[0] < SCHEDULE_TTL_SEC:
+        return hit[1]
+    try:
+        snaps = [_fill_places(s) for s in await SCHEDULE.fetch(flight_no)]
+    except Exception:  # noqa: BLE001 — лимит/сеть: остаёмся с табло
+        log.warning("расписание %s недоступно", flight_no, exc_info=True)
+        return []
+    _schedule_cache[flight_no] = (time.monotonic(), snaps)
+    return snaps
+
+
+async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSnapshot]:
+    """Даты для подписки: сегодня…+HORIZON_DAYS. Табло богаче (стойки, выход),
+    поэтому его снимок на дату главнее; расписание добирает даты, которых на
+    табло ещё нет (табло держит только вчера/сегодня/завтра)."""
+    today = today or datetime.now(MSK).date()
+    last = (today + timedelta(days=HORIZON_DAYS)).isoformat()
+    boards = upcoming(await probe(flight_no), today)
+    have = {s.date for s in boards}
+    extra = [s for s in upcoming(await schedule(flight_no), today) if s.date not in have]
+    return sorted((s for s in boards + extra if s.date <= last), key=lambda s: s.date)
+
+
 async def fetch_for(flight_no: str, date: str, direction: str,
                     prefer: Optional[str] = None) -> Optional[FlightSnapshot]:
     """Снимок конкретного рейса на дату и направление — для опроса подписки.
@@ -137,7 +182,10 @@ async def fetch_for(flight_no: str, date: str, direction: str,
         for s in snaps:
             if s.date == date:
                 return (await enrich_iata([s]))[0]
-    return None
+    # Рейс ещё не на табло — снимок из расписания, если его уже брали при поиске
+    # (новый платный запрос ради опроса не делаем).
+    hit = _schedule_cache.get(flight_no)
+    return next((s for s in hit[1] if s.date == date), None) if hit else None
 
 
 class BoardProbeResolver(AirportResolver):

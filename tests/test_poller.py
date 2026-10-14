@@ -100,3 +100,16 @@ def test_expires_a_day_after_flight_date(monkeypatch):
     _run(conn, send, datetime(2026, 9, 8, 0, 1, tzinfo=MSK))      # сутки прошли
     assert storage.active_all(conn) == []
     assert send.msgs == []
+
+
+def test_far_future_unseen_flight_sleeps_until_day_before(monkeypatch):
+    conn = storage.connect(":memory:")
+    storage.add(conn, 42, "EK770", "2026-09-10")
+
+    async def none(flight_no, date, direction, prefer=None):
+        return None
+    monkeypatch.setattr(registry, "fetch_for", none)
+    _run(conn, _Sends())
+    wake = datetime(2026, 9, 9, 0, 0, tzinfo=MSK)           # 00:00 МСК накануне
+    assert storage.due(conn, int(wake.timestamp()) - 1) == []
+    assert len(storage.due(conn, int(wake.timestamp()))) == 1
