@@ -184,6 +184,9 @@ pip install -r requirements.txt pytest
 pytest
 ```
 
+CI — GitHub Actions (`.github/workflows/tests.yml`): pytest на Python 3.12 на каждый
+пуш и PR; для публичного репозитория бесплатно.
+
 Тесты не ходят в сеть: парсер SVO гоняется на боевой фикстуре, поллер — с
 подменённым источником.
 
