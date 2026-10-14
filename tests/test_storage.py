@@ -131,3 +131,11 @@ def test_migrate_chat_keeps_live_sub_when_new_chat_has_it_inactive():
     got = [(r["chat_id"], r["flight"]) for r in storage.active_all(conn)]
     assert got == [(-1001, "SU2")]                                        # живая не потерялась
     assert storage.migrate_chat(conn, -1, -1001) == 0
+
+
+def test_snapshot_from_newer_version_with_unknown_field_loads():
+    from flight_bot.models import FlightSnapshot, snap_from_dict, snap_to_dict
+    d = snap_to_dict(FlightSnapshot(flight="EK132", date="2026-10-15", direction="departure",
+                                    origin_iata="DME", dest_iata="DXB", status=""))
+    d["field_from_future"] = "x"
+    assert snap_from_dict(d).flight == "EK132"

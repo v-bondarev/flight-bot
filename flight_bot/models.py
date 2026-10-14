@@ -76,7 +76,9 @@ def snap_to_dict(s: FlightSnapshot) -> dict:
 
 
 def snap_from_dict(d: dict) -> FlightSnapshot:
-    d = dict(d)
+    # Неизвестные поля (снимок от более новой версии) пропускаем: откат не должен ронять опрос.
+    known = {f.name for f in dataclasses.fields(FlightSnapshot)}
+    d = {k: v for k, v in d.items() if k in known}
     d["departure"] = Leg(**(d.get("departure") or {}))
     d["arrival"] = Leg(**(d.get("arrival") or {}))
     d["checkin"] = Checkin(**(d.get("checkin") or {}))
