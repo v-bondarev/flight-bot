@@ -12,9 +12,7 @@ class Settings:
     bot_token: str
     db_path: str
     poll_interval_sec: int
-    grace_sec: int              # держать подписку после прилёта, потом снять
     scrapedo_api_key: str       # для источников с антиботом (DME/Pulkovo); пусто — не используем
-    yandex_rasp_api_key: str    # реестр «номер → аэропорт» вне Москвы; пусто — не используем
     airlabs_api_key: str        # статус/маршрут по номеру вне наших табло; пусто — не используем
     aerodatabox_api_key: str    # расписание по номеру на 5 дней вперёд (RapidAPI); пусто — не используем
     schedule_proxy_url: str     # выход для AeroDataBox (socks5://127.0.0.1:1081, туннель до DK); пусто — напрямую
@@ -80,9 +78,7 @@ def load() -> Settings:
         bot_token=os.getenv("BOT_TOKEN", ""),
         db_path=os.getenv("DB_PATH", "flight-bot.sqlite"),
         poll_interval_sec=int(os.getenv("POLL_INTERVAL_SEC", "300")),
-        grace_sec=int(os.getenv("GRACE_SEC", "3600")),
         scrapedo_api_key=os.getenv("SCRAPEDO_API_KEY", ""),
-        yandex_rasp_api_key=os.getenv("YANDEX_RASP_API_KEY", ""),
         airlabs_api_key=os.getenv("AIRLABS_API_KEY", ""),
         aerodatabox_api_key=os.getenv("AERODATABOX_API_KEY", ""),
         schedule_proxy_url=os.getenv("SCHEDULE_PROXY_URL", ""),
