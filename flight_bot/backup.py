@@ -4,12 +4,15 @@
 
 Копия — через sqlite3 backup API (консистентна при работающем боте). Храним
 KEEP_DAYS дней; удаляем только свои файлы db-YYYYMMDD.sqlite в каталоге копий.
+BACKUP_RSYNC_TARGET (например, user@host:flight-bot-backup/) — после копии каталог
+зеркалится туда rsync: копия на том же диске, что и база, не переживёт потерю хоста.
 """
 from __future__ import annotations
 
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -40,7 +43,14 @@ def run(db_path: str, out_dir: str, keep_days: int = KEEP_DAYS, stamp: str = "")
     return target
 
 
+def mirror(out_dir: str, target: str) -> None:
+    """Зеркало каталога копий на другой хост: ротация там повторяет локальную."""
+    subprocess.run(["rsync", "-a", "--delete", out_dir.rstrip("/") + "/", target], check=True)
+
+
 if __name__ == "__main__":
     config.load_env(os.getenv("FLIGHT_BOT_ENV", ".env"))
     out = os.getenv("BACKUP_DIR", os.path.expanduser("~/flight-bot-backup/daily"))
     print(run(config.load().db_path, out), file=sys.stdout)
+    if os.getenv("BACKUP_RSYNC_TARGET"):
+        mirror(out, os.environ["BACKUP_RSYNC_TARGET"])

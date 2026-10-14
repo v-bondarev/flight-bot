@@ -1,0 +1,7 @@
+# Линтер в CI (.github/workflows/tests.yml): неиспользуемые импорты и переменные,
+# порядок импортов, ловушки из flake8-bugbear. Стиль не навязываем.
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B"]

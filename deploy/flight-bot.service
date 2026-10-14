@@ -14,6 +14,10 @@ EnvironmentFile=/opt/flight-bot/.env
 ExecStart=/opt/flight-bot/.venv/bin/python -m flight_bot.main
 Restart=on-failure
 RestartSec=10
+# Поллер тикает раз в минуту и шлёт WATCHDOG=1 (flight_bot/watchdog.py); тики
+# пропали — процесс завис, systemd его перезапустит.
+WatchdogSec=300
+NotifyAccess=main
 
 [Install]
 WantedBy=multi-user.target

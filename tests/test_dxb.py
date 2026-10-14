@@ -31,7 +31,6 @@ def test_arrival_ek771_with_belt_and_landing():
 
 
 def test_cancelled_and_codeshare_lookup():
-    rx = next(f for f in PAYLOAD["Flights"] if f["flightNumber"] == "RX 244")
     assert is_cancelled(dxb.parse(PAYLOAD, "RX244", "departure")[0])
     assert [s.flight for s in dxb.parse(PAYLOAD, "SA7157", "departure")][:1] == ["SA7157"]  # кодшер EK770
 

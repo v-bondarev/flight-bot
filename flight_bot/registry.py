@@ -2,8 +2,8 @@
 
 Пока набор табло узкий (Москва), резолвер — это опрос настроенных источников:
 табло само по номеру отдаёт маршрут. Оба направления пробуем, т.к. заранее не
-знаем, вылетает рейс из нашего аэропорта или прилетает. Yandex/AeroDataBox
-подключим сюда же, когда набор перерастёт Москву.
+знаем, вылетает рейс из нашего аэропорта или прилетает. AirLabs и AeroDataBox
+подключены сюда же для рейсов вне наших табло.
 """
 from __future__ import annotations
 
@@ -17,12 +17,12 @@ from typing import Dict, List, Optional, Tuple
 
 from flight_bot import airports, health, storage
 from flight_bot.config import Settings
-from flight_bot.http import describe
+from flight_bot.http import SharedFetch, describe
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
 from flight_bot.sources.airlabs import AirlabsSource
-from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.bah import BahSource
+from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.dme import DmeSource
 from flight_bot.sources.dxb import DxbSource
 from flight_bot.sources.led import LedSource
@@ -30,6 +30,18 @@ from flight_bot.sources.svo import SvoSource
 from flight_bot.sources.vko import VkoSource
 
 DIRECTIONS = ("departure", "arrival")
+
+
+class Found(List[FlightSnapshot]):
+    """Результат поиска: снимки плюс имена источников, которые упали или не
+    уложились в таймаут, — «рейса нет» и «табло не отвечают» для пользователя
+    разные ответы."""
+
+    down: set
+
+    def __init__(self, snaps=(), down=()):
+        super().__init__(snaps)
+        self.down = set(down)
 
 log = logging.getLogger("flight_bot.registry")
 
@@ -57,39 +69,24 @@ PROBE_TIMEOUT_SEC = 15.0
 # Ответ источника на (рейс, дата, направление) общий для всех подписок и поиска:
 # 10 подписок на один рейс = один запрос за цикл. Одновременные — склеиваем.
 FETCH_TTL_SEC = 60.0
-_clock = time.monotonic
-_fetch_cache: Dict[tuple, Tuple[float, List[FlightSnapshot]]] = {}
-_fetch_inflight: Dict[tuple, "asyncio.Future"] = {}
+_fetches = SharedFetch(FETCH_TTL_SEC)
 
 
 async def cached_fetch(src: FlightSource, flight_no: str, date: Optional[str],
                        direction: str) -> List[FlightSnapshot]:
-    """src.fetch с кэшем FETCH_TTL_SEC и склейкой одновременных запросов.
-    Ошибку не запоминаем: следующий вызов спросит источник снова."""
-    key = (src.name, flight_no, date, direction)
-    hit = _fetch_cache.get(key)
-    if hit and _clock() - hit[0] < FETCH_TTL_SEC:
-        return hit[1]
-    task = _fetch_inflight.get(key)
-    if task is None:
-        task = asyncio.ensure_future(src.fetch(flight_no, date, direction))
-        _fetch_inflight[key] = task
+    """src.fetch с кэшем FETCH_TTL_SEC и склейкой одновременных запросов (SharedFetch:
+    ошибку не запоминает, таймаут поиска не отменяет запрос, которого ждёт и опрос).
+    Исход каждого реального запроса уходит в мониторинг источников."""
 
-        def done(t: "asyncio.Future") -> None:
-            _fetch_inflight.pop(key, None)
-            if t.cancelled():
-                return
-            if t.exception() is not None:
-                health.HEALTH.fail(src.name, t.exception())
-                return
-            health.HEALTH.ok(src.name)
-            now = _clock()
-            for k in [k for k, (ts, _) in _fetch_cache.items() if now - ts >= FETCH_TTL_SEC]:
-                del _fetch_cache[k]
-            _fetch_cache[key] = (now, t.result())
-        task.add_done_callback(done)
-    # shield: таймаут поиска не должен отменить запрос, которого ждёт и опрос.
-    return await asyncio.shield(task)
+    async def load() -> List[FlightSnapshot]:
+        try:
+            snaps = await src.fetch(flight_no, date, direction)
+        except Exception as exc:
+            health.HEALTH.fail(src.name, exc)
+            raise
+        health.HEALTH.ok(src.name)
+        return snaps
+    return await _fetches.get((src.name, flight_no, date, direction), load)
 
 
 def configure(settings: Settings, conn: Optional[sqlite3.Connection] = None) -> None:
@@ -152,9 +149,8 @@ async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
                 al = await airlabs.fetch(s.flight)
                 _iata_cache[s.flight] = (al[0].origin_iata, al[0].dest_iata) if al else ("", "")
             except Exception as exc:  # noqa: BLE001 — обогащение не должно ломать основной путь
-                health.HEALTH.fail(airlabs.name, exc)
-                _iata_cache[s.flight] = ("", "")
-        o, d = _iata_cache[s.flight]
+                health.HEALTH.fail(airlabs.name, exc)   # ошибку не запоминаем: спросим в следующий раз
+        o, d = _iata_cache.get(s.flight, ("", ""))
         known_ok = (s.origin_iata and s.origin_iata == o) or (s.dest_iata and s.dest_iata == d)
         if known_ok:
             s = _fill_places(dataclasses.replace(s, origin_iata=s.origin_iata or o,
@@ -164,29 +160,32 @@ async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
 
 
 async def _ask(src: FlightSource, flight_no: str, date: Optional[str],
-               direction: str) -> List[FlightSnapshot]:
+               direction: str) -> Optional[List[FlightSnapshot]]:
+    """Снимки источника для поиска; None — источник упал или не уложился в таймаут."""
     try:
         return await asyncio.wait_for(cached_fetch(src, flight_no, date, direction),
                                       PROBE_TIMEOUT_SEC)
     except Exception as exc:  # noqa: BLE001 — источник отвалился или тормозит: для поиска пусто
         log.warning("проба %s %s %s: %s", src.name, flight_no, direction, describe(exc))
-        return []
+        return None
 
 
-async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapshot]:
+async def probe(flight_no: str, date: Optional[str] = None) -> Found:
     """Найти рейс на настроенных табло. Табло опрашиваем разом (время поиска —
     самое медленное табло, а не сумма), результат берём по порядку SOURCES.
     Платные источники с ключом (AirLabs) — только если все табло пусты, и одним
     запросом: к аэропорту они не привязаны, направление им не важно."""
     boards = [s for s in SOURCES if not isinstance(s, AirlabsSource)]
     keyed = [s for s in SOURCES if isinstance(s, AirlabsSource)]
+    down = set()
     for tier, dirs in ((boards, DIRECTIONS), (keyed, DIRECTIONS[:1])):
         pairs = [(src, d) for src in tier for d in dirs]
         found = await asyncio.gather(*(_ask(src, flight_no, date, d) for src, d in pairs))
+        down |= {src.name for (src, _), snaps in zip(pairs, found, strict=True) if snaps is None}
         for snaps in found:
             if snaps:
-                return await enrich_iata(snaps)
-    return []
+                return Found(await enrich_iata(snaps), down)
+    return Found((), down)
 
 
 MSK = timezone(timedelta(hours=3))   # дата рейса на табло — московская
@@ -289,7 +288,7 @@ def scheduled(flight_no: str, date: str) -> Optional[FlightSnapshot]:
     return next((s for s in map(_board_side, _cached(flight_no) or []) if s.date == date), None)
 
 
-async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSnapshot]:
+async def search(flight_no: str, today: Optional[date] = None) -> Found:
     """Даты для подписки: сегодня…+HORIZON_DAYS. Табло богаче (стойки, выход),
     поэтому его снимок на дату главнее; расписание добирает даты, которых на
     табло ещё нет (табло держит только вчера/сегодня/завтра)."""
@@ -300,7 +299,8 @@ async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSna
     have = {s.date for s in boards}
     extra = [s for s in upcoming([_board_side(s) for s in planned], today)
              if s.date not in have]
-    return sorted((s for s in boards + extra if s.date <= last), key=lambda s: s.date)
+    return Found(sorted((s for s in boards + extra if s.date <= last), key=lambda s: s.date),
+                 found.down)
 
 
 async def fetch_for(flight_no: str, date: str, direction: str,

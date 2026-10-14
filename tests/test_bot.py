@@ -32,7 +32,7 @@ def test_owner_ids_from_env(monkeypatch):
         config.load()
 
 
-def _feed(text, user_id, chat_type, monkeypatch, username=None):
+def _feed(text, user_id, chat_type, monkeypatch, username=None, search="empty"):
     """Прогнать апдейт через настоящий Dispatcher; вернуть, что бот ответил."""
     import asyncio
     from datetime import datetime
@@ -48,9 +48,13 @@ def _feed(text, user_id, chat_type, monkeypatch, username=None):
         said.append(text)
     monkeypatch.setattr(Message, "answer", answer)
 
-    async def search(flight):
-        return []
-    monkeypatch.setattr(registry, "search", search)
+    async def typing(self, *a, **kw):
+        return True
+    monkeypatch.setattr(Bot, "send_chat_action", typing)
+    if search == "empty":
+        async def empty(flight):
+            return registry.Found()
+        monkeypatch.setattr(registry, "search", empty)
 
     chat_id = user_id if chat_type == "private" else -100500
     msg = Message(message_id=1, date=datetime.now(), text=text,
@@ -171,3 +175,79 @@ def test_named_user_is_greeted_formally(monkeypatch):
 
 def test_greeting_escapes_html_in_name():
     assert "Иван &amp; Пётр" in bot.greeting("Иван & Пётр")
+
+
+def test_flight_number_needs_a_letter_in_airline_code():
+    assert bot.flight_number("10 30") is None       # время, а не рейс — поиск платный
+    assert bot.flight_number("S7 1055") == "S71055"
+    assert bot.flight_number("7R123") == "7R123"
+
+
+def test_search_tells_when_boards_are_down(monkeypatch):
+    from flight_bot import registry
+
+    def search_returning(found, down):
+        async def search(flight):
+            got = registry.Found(found)
+            got.down = down
+            return got
+        monkeypatch.setattr(registry, "search", search)
+    search_returning([], {"dme.ru", "svo.aero"})
+    said = _feed("EK770", 1, "private", monkeypatch, search=None)
+    assert "не отвечают" in said[0] and "dme.ru" in said[0] and "svo.aero" in said[0]
+    search_returning([], set())
+    assert _feed("EK770", 1, "private", monkeypatch, search=None)[0].startswith("Рейс EK770 не нашёл")
+
+
+def test_subscribe_answers_callback_before_slow_board(monkeypatch):
+    """Часики на кнопке гаснут сразу, а не после опроса табло (до минуты через scrape.do)."""
+    import asyncio
+    from datetime import datetime
+
+    from aiogram.types import CallbackQuery, Chat, Message, User
+
+    from flight_bot import registry, storage
+    order = []
+
+    async def answer(self, *a, **kw):
+        order.append("answer")
+
+    async def edit(self, text, **kw):
+        order.append(("edit", text))
+    monkeypatch.setattr(CallbackQuery, "answer", answer)
+    monkeypatch.setattr(Message, "edit_text", edit)
+
+    async def slow(*a, **kw):
+        order.append("fetch")
+        return None
+    monkeypatch.setattr(registry, "fetch_for", slow)
+    monkeypatch.setattr(registry, "scheduled", lambda *a: None)
+    msg = Message(message_id=1, date=datetime.now(), text="Нашёл", chat=Chat(id=1, type="private"))
+    cb = CallbackQuery(id="1", from_user=User(id=1, is_bot=False, first_name="u"),
+                       chat_instance="x", message=msg, data="sub|EK770|2026-10-16|departure|")
+    asyncio.run(bot.on_subscribe(cb, storage.connect(":memory:")))
+    assert order[0] == "answer" and order[1][0] == "edit" and "⏳" in order[1][1]
+    assert order[2] == "fetch" and order[3][1].startswith("✅ Подписал")
+
+
+def test_list_shows_route_from_last_snapshot(monkeypatch):
+    import asyncio
+    from datetime import datetime
+
+    from aiogram.types import Chat, Message
+
+    from flight_bot import storage
+    from flight_bot.models import FlightSnapshot
+    said = []
+
+    async def answer(self, text, reply_markup=None, **kw):
+        said.append([b.text for row in reply_markup.inline_keyboard for b in row])
+    monkeypatch.setattr(Message, "answer", answer)
+    conn = storage.connect(":memory:")
+    sid = storage.add(conn, 42, "SU2128", "2026-09-06")
+    storage.set_last(conn, sid, FlightSnapshot(flight="SU2128", date="2026-09-06", direction="departure",
+                                               origin_iata="SVO", dest_iata="AYT", status=""))
+    storage.add(conn, 42, "SU2129", "2026-09-07")       # ещё не опрашивалась — без маршрута
+    msg = Message(message_id=1, date=datetime.now(), text="/list", chat=Chat(id=42, type="private"))
+    asyncio.run(bot.list_subs(msg, conn))
+    assert said == [["❌ SU2128 06.09 · SVO→AYT", "❌ SU2129 07.09"]]

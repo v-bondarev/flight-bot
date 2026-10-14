@@ -2,8 +2,7 @@
 переносит их на новый chat_id, удалённая тема — пуш в General."""
 import asyncio
 
-from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError,
-                                TelegramMigrateToChat)
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramMigrateToChat
 
 from flight_bot import main, storage
 

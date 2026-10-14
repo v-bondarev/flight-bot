@@ -16,6 +16,15 @@ def test_add_lists_and_reactivates():
     assert len(storage.list_for_chat(conn, 42)) == 1
 
 
+def test_resubscribe_polls_at_once_not_after_old_interval():
+    conn = _conn()
+    sid = storage.add(conn, 42, "SU2128", "2026-09-06")
+    storage.set_next(conn, sid, 10**10)              # часовой интервал «до вылета далеко»
+    storage.remove(conn, 42, sid)
+    storage.add(conn, 42, "SU2128", "2026-09-06")    # вернул подписку — опрос сразу
+    assert [r["id"] for r in storage.due(conn, 1)] == [sid]
+
+
 def test_remove_hides_from_list_and_active():
     conn = _conn()
     sid = storage.add(conn, 42, "SU2128", "2026-09-06")

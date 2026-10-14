@@ -13,8 +13,7 @@ from typing import Optional
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError,
-                                TelegramMigrateToChat)
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramMigrateToChat
 
 from flight_bot import bot as handlers
 from flight_bot import config, health, poller, registry, storage
@@ -101,6 +100,7 @@ async def main() -> None:
             except Exception:  # noqa: BLE001 — предупреждение не должно ронять опрос
                 log.exception("предупреждение владельцу %s не ушло", owner)
     health.HEALTH.notify = tell_owners
+    health.HEALTH.attach(conn)          # серия ошибок и день напоминания переживают рестарт
     background = set()  # держим ссылку, чтобы задачу не собрал GC
 
     async def on_startup() -> None:

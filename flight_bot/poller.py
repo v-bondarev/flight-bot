@@ -5,7 +5,8 @@
 Цикл тикает раз в минуту и берёт только те подписки, чей `next_at` наступил.
 
 Подписка снимается сама: после прилёта, при отмене и через сутки после даты
-рейса (если он так и не появился на табло). Рейс, которого на табло ещё нет,
+рейса — об этом последнем случае пользователю приходит пуш, молча снятая
+подписка выглядит как потерянная. Рейс, которого на табло ещё нет,
 до 00:00 МСК накануне даты не опрашиваем: табло держат только сегодня/завтра.
 
 send — async callable(chat_id, text, thread_id): развязывает поллер с aiogram и делает
@@ -20,7 +21,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
-from flight_bot import health, registry, storage
+from flight_bot import health, registry, storage, watchdog
 from flight_bot.config import Settings
 from flight_bot.diff import diff_snapshots
 from flight_bot.models import FlightSnapshot, is_cancelled
@@ -70,6 +71,13 @@ def expired(date: str, now: datetime) -> bool:
     return now >= day + timedelta(days=1 + EXPIRE_DAYS)
 
 
+def expiry_message(row: sqlite3.Row, seen: bool) -> str:
+    when = f"{row['date'][8:10]}.{row['date'][5:7]}"
+    why = ("прошли сутки после даты рейса, прилёта табло не показало" if seen
+           else "на табло так и не появился")
+    return f"🔕 {row['flight']} {when} — {why}. Слежение снято."
+
+
 async def _fetch(conn: sqlite3.Connection, row: sqlite3.Row) -> Optional[FlightSnapshot]:
     try:
         last = storage.get_last(conn, row["id"])
@@ -88,12 +96,13 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
     for row in storage.due(conn, epoch):
         if expired(row["date"], now):
             storage.deactivate(conn, row["id"])
+            await send(row["chat_id"], expiry_message(row, bool(row["last_json"])), row["thread_id"])
         else:
             rows.append(row)
     # Опрашиваем параллельно: табло через scrape.do отвечает десятки секунд,
     # по очереди одна медленная подписка тормозила бы все остальные.
     snaps = await asyncio.gather(*(_fetch(conn, r) for r in rows))
-    for row, curr in zip(rows, snaps):
+    for row, curr in zip(rows, snaps, strict=True):
         try:
             await _handle(conn, send, row, curr, now, epoch, near)
         except Exception:  # noqa: BLE001 — одна подписка не должна ронять весь круг
@@ -133,6 +142,10 @@ async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,
 
 async def run(conn: sqlite3.Connection, settings: Settings, send: Send) -> None:
     while True:
+        try:
+            watchdog.notify()
+        except OSError:
+            log.exception("sd_notify не ушёл")
         if settings.airlabs_key_expires:
             health.HEALTH.remind_expiry("AirLabs", settings.airlabs_key_expires,
                                         datetime.now(MSK).date())
