@@ -5,6 +5,10 @@
   • тап по дате → подписка + карточка текущего статуса;
   • /list — активные подписки с кнопкой «Отписаться».
 
+В группе Telegram (режим приватности) бот видит только команды, поэтому там
+номер шлют командой `/track EK770`; обновления идут в тот чат, где подписались.
+OWNER_IDS — чьи сообщения и кнопки бот принимает; остальных молча игнорирует.
+
 conn прокидывается через workflow-data диспетчера (см. main.py), поэтому
 хендлеры получают его аргументом — без глобалей.
 """
@@ -12,9 +16,10 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from typing import FrozenSet, Optional
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
@@ -23,6 +28,18 @@ from flight_bot.render import endpoints, status_card
 
 router = Router()
 
+# Задаётся в main из OWNER_IDS. Пусто — бот открыт всем, как раньше.
+OWNERS: FrozenSet[int] = frozenset()
+
+
+def allowed(user_id: Optional[int]) -> bool:
+    return not OWNERS or user_id in OWNERS
+
+
+# Фильтр на весь роутер: чужие сообщения и нажатия не доходят до хендлеров.
+router.message.filter(lambda m: allowed(m.from_user.id if m.from_user else None))
+router.callback_query.filter(lambda c: allowed(c.from_user.id if c.from_user else None))
+
 # Номер рейса: код 2 знака (буквы/цифры) + 1–4 цифры, пробел не обязателен.
 FLIGHT_RE = re.compile(r"^[A-Za-z0-9]{2}\s?\d{1,4}$")
 
@@ -30,7 +47,8 @@ HELP = (
     "Пришлите номер рейса (например <b>SU2128</b>) — покажу ближайшие даты, "
     "выберите нужную, и я буду присылать все изменения: задержку, смену "
     "терминала или выхода, вылет, прилёт, отмену.\n\n"
-    "/list — ваши подписки."
+    "/list — ваши подписки.\n"
+    "В группе: /track SU2128 — обновления придут в эту группу."
 )
 
 
@@ -58,9 +76,27 @@ async def list_subs(message: Message, conn: sqlite3.Connection) -> None:
     await message.answer("Ваши подписки:", reply_markup=kb)
 
 
+def flight_number(text: Optional[str]) -> Optional[str]:
+    """«ek 770» → «EK770»; не номер рейса — None."""
+    text = (text or "").strip()
+    return text.upper().replace(" ", "") if FLIGHT_RE.match(text) else None
+
+
+@router.message(Command("track"))
+async def track(message: Message, command: CommandObject) -> None:
+    flight = flight_number(command.args)
+    if flight is None:
+        await message.answer("Укажите номер рейса: /track SU2128")
+        return
+    await offer_dates(message, flight)
+
+
 @router.message(F.text.regexp(FLIGHT_RE))
 async def on_flight_number(message: Message) -> None:
-    flight = message.text.strip().upper().replace(" ", "")
+    await offer_dates(message, flight_number(message.text))
+
+
+async def offer_dates(message: Message, flight: str) -> None:
     snaps = await registry.search(flight)
     if not snaps:
         await message.answer(
@@ -105,6 +141,6 @@ async def on_unsubscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     await cb.message.edit_text("Отписка выполнена. /list — что осталось.")
 
 
-@router.message()
+@router.message(F.chat.type == "private")   # в группе посторонний текст не наш
 async def fallback(message: Message) -> None:
     await message.answer("Не похоже на номер рейса. " + HELP)

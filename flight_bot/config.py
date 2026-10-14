@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import FrozenSet
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class Settings:
     scrapedo_concurrency: int   # одновременных запросов к scrape.do (кредиты платные)
     render_url: str             # резервный рендер VKO через туннель; основной путь — HTTP API
     render_cache_sec: int       # TTL кэша VKO HTTP-поиска и резервного HTML-рендера
+    owner_ids: FrozenSet[int]   # Telegram user id, чьи команды и кнопки бот принимает; пусто — все
 
 
 def load_env(path: str = ".env") -> None:
@@ -54,4 +56,5 @@ def load() -> Settings:
         scrapedo_concurrency=int(os.getenv("SCRAPEDO_CONCURRENCY", "2")),
         render_url=os.getenv("RENDER_URL", ""),
         render_cache_sec=int(os.getenv("RENDER_CACHE_SEC", "75")),
+        owner_ids=frozenset(int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()),
     )
