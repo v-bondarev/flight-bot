@@ -43,3 +43,10 @@ def test_parse_actual_times_become_facts():
 def test_parse_empty_response_is_none():
     assert airlabs.parse({"response": None}, "SU2128") is None
     assert airlabs.parse({"response": []}, "SU2128") is None
+
+
+def test_without_utc_pair_time_stays_naive_not_utc():
+    from flight_bot.diff import with_msk
+    s = airlabs.parse(_payload(dep_time_utc=None), "SU2128")
+    assert s.departure.plan == "2026-09-06T00:25:00"          # пояс неизвестен — без офсета
+    assert with_msk(s.departure.plan) == "00:25"               # и без ложной скобки МСК

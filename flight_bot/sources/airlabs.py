@@ -35,14 +35,18 @@ def _parse(s: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _offset(local: Optional[str], utc: Optional[str]) -> timedelta:
+def _offset(local: Optional[str], utc: Optional[str]) -> Optional[timedelta]:
+    """Офсет по паре local/utc; нет пары — None (пояс неизвестен), а не UTC:
+    подставленный +00:00 дал бы московскому рейсу ложное «(12:40 МСК)»."""
     a, b = _parse(local), _parse(utc)
-    return a - b if a and b else timedelta(0)
+    return a - b if a and b else None
 
 
-def _iso(local: Optional[str], off: timedelta) -> Optional[str]:
+def _iso(local: Optional[str], off: Optional[timedelta]) -> Optional[str]:
     d = _parse(local)
-    return d.replace(tzinfo=timezone(off)).isoformat() if d else None
+    if d is None:
+        return None
+    return (d.replace(tzinfo=timezone(off)) if off is not None else d).isoformat()
 
 
 def parse(payload: dict, flight_no: str) -> Optional[FlightSnapshot]:
