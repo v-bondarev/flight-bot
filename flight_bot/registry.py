@@ -151,7 +151,8 @@ async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
             try:
                 al = await airlabs.fetch(s.flight)
                 _iata_cache[s.flight] = (al[0].origin_iata, al[0].dest_iata) if al else ("", "")
-            except Exception:  # noqa: BLE001 — обогащение не должно ломать основной путь
+            except Exception as exc:  # noqa: BLE001 — обогащение не должно ломать основной путь
+                health.HEALTH.fail(airlabs.name, exc)
                 _iata_cache[s.flight] = ("", "")
         o, d = _iata_cache[s.flight]
         known_ok = (s.origin_iata and s.origin_iata == o) or (s.dest_iata and s.dest_iata == d)
@@ -175,11 +176,12 @@ async def _ask(src: FlightSource, flight_no: str, date: Optional[str],
 async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapshot]:
     """Найти рейс на настроенных табло. Табло опрашиваем разом (время поиска —
     самое медленное табло, а не сумма), результат берём по порядку SOURCES.
-    Платные источники с ключом (AirLabs) — только если все табло пусты."""
+    Платные источники с ключом (AirLabs) — только если все табло пусты, и одним
+    запросом: к аэропорту они не привязаны, направление им не важно."""
     boards = [s for s in SOURCES if not isinstance(s, AirlabsSource)]
     keyed = [s for s in SOURCES if isinstance(s, AirlabsSource)]
-    for tier in (boards, keyed):
-        pairs = [(src, d) for src in tier for d in DIRECTIONS]
+    for tier, dirs in ((boards, DIRECTIONS), (keyed, DIRECTIONS[:1])):
+        pairs = [(src, d) for src in tier for d in dirs]
         found = await asyncio.gather(*(_ask(src, flight_no, date, d) for src, d in pairs))
         for snaps in found:
             if snaps:

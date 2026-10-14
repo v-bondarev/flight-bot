@@ -79,3 +79,16 @@ def test_scrapedo_concurrency_limited(monkeypatch):
         await asyncio.gather(*(f.get("https://www.dme.ru/x") for _ in range(4)))
     asyncio.run(run())
     assert state["max"] == 1
+
+
+def test_enrich_error_reaches_health(monkeypatch):
+    """Обогащение глотает ошибку ради основного пути, но мониторинг её видит."""
+    class _Broken(_Airlabs):
+        async def fetch(self, flight_no, date=None, direction="departure"):
+            raise RuntimeError("unknown_api_key")
+    failed = []
+    monkeypatch.setattr(registry.health.HEALTH, "fail", lambda src, exc: failed.append(src))
+    monkeypatch.setattr(registry, "SOURCES", [_Broken(("DME", "KZN"))])
+    registry._iata_cache.clear()
+    assert asyncio.run(registry.enrich_iata([_snap()]))[0].dest_iata == ""
+    assert failed == ["airlabs.co"]

@@ -50,3 +50,10 @@ def test_without_utc_pair_time_stays_naive_not_utc():
     s = airlabs.parse(_payload(dep_time_utc=None), "SU2128")
     assert s.departure.plan == "2026-09-06T00:25:00"          # пояс неизвестен — без офсета
     assert with_msk(s.departure.plan) == "00:25"               # и без ложной скобки МСК
+
+
+def test_error_in_body_raises_instead_of_empty():
+    """Ошибку (ключ истёк, лимит) AirLabs отдаёт телом, не HTTP-кодом: это не «рейса нет»."""
+    import pytest
+    with pytest.raises(airlabs.AirlabsError, match="unknown_api_key"):
+        airlabs.parse({"error": {"code": "unknown_api_key", "message": "Unknown api_key"}}, "SU2128")
