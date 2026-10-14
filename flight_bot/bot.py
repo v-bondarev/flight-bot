@@ -51,7 +51,7 @@ async def foreign_tap(cb: CallbackQuery) -> None:
 
 # Номер рейса: код 2 знака (буквы/цифры, хотя бы одна буква — «10 30» это время,
 # а поиск платный) + 1–4 цифры, пробел не обязателен.
-FLIGHT_RE = re.compile(r"^(?=[A-Za-z0-9]{2}\s?\d)[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]?\s?\d{1,4}$")
+FLIGHT_RE = re.compile(r"^(?=.*[A-Za-z])[A-Za-z0-9]{2}\s?\d{1,4}$")
 
 HELP = (
     "Пришлите номер рейса (например <b>SU2128</b>) — покажу ближайшие даты, "
@@ -139,8 +139,9 @@ async def on_flight_number(message: Message) -> None:
 
 async def offer_dates(message: Message, flight: str) -> None:
     # Табло и расписание отвечают до 15–20 с — пусть чат показывает «печатает».
-    await message.bot.send_chat_action(message.chat.id, "typing",
-                                       message_thread_id=message.message_thread_id)
+    await message.bot.send_chat_action(
+        message.chat.id, "typing",
+        message_thread_id=message.message_thread_id if message.is_topic_message else None)
     snaps = await registry.search(flight)
     down = f"табло {', '.join(sorted(snaps.down))} сейчас не отвечают" if snaps.down else ""
     if not snaps:
