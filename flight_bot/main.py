@@ -25,9 +25,8 @@ async def main() -> None:
     settings = config.load()
     if not settings.bot_token:
         raise SystemExit("BOT_TOKEN не задан (см. .env.example)")
-    registry.configure(settings)
-
     conn = storage.connect(settings.db_path)
+    registry.configure(settings, conn)   # conn — бюджет платного расписания
     tg = Bot(settings.bot_token,
              default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()

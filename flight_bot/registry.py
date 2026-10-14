@@ -10,11 +10,12 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import sqlite3
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
-from flight_bot import airports
+from flight_bot import airports, storage
 from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
@@ -38,11 +39,16 @@ SCHEDULE: Optional[FlightSource] = None
 SCHEDULE_TTL_SEC = 6 * 3600
 SCHEDULE_FAIL_TTL_SEC = 600     # лимит/сеть: не ждать таймаут на каждом поиске
 SCHEDULE_CACHE_MAX = 1000
+# Бюджет квоты: не больше SCHEDULE_BUDGET платных запросов за скользящие 31 день —
+# так любой месячный цикл RapidAPI укладывается в лимит, когда бы он ни сбрасывался.
+SCHEDULE_BUDGET = 60
+SCHEDULE_BUDGET_WINDOW_SEC = 31 * 86400
+_budget_conn: Optional[sqlite3.Connection] = None   # без базы платных запросов нет
 # Аэропорты наших табло: рейс сюда (а не отсюда) ищем на табло прилёта.
 BOARD_IATA = {"SVO", "DME", "VKO", "LED"}
 
 
-def configure(settings: Settings) -> None:
+def configure(settings: Settings, conn: Optional[sqlite3.Connection] = None) -> None:
     """Источники с ключами — в конец списка: табло богаче, они первые.
     Табло, ходящие через Fetcher, получают ключ scrape.do как запасной транспорт."""
     from flight_bot import http
@@ -60,9 +66,10 @@ def configure(settings: Settings) -> None:
                                 cache_sec=settings.render_cache_sec)
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
-    global SCHEDULE
+    global SCHEDULE, SCHEDULE_BUDGET, _budget_conn
     if settings.aerodatabox_api_key:
         SCHEDULE = AeroDataBoxSource(settings.aerodatabox_api_key)
+    SCHEDULE_BUDGET, _budget_conn = settings.aerodatabox_budget, conn
 
 
 # Маршрут по номеру у AirLabs: (origin, dest). Кэш на процесс — маршрут у
@@ -162,6 +169,13 @@ def _remember(flight_no: str, snaps: List[FlightSnapshot], ttl: float) -> None:
 
 
 async def _load(flight_no: str) -> List[FlightSnapshot]:
+    # Попытку списываем до запроса: тарифицирует ли RapidAPI ошибки — не знаем.
+    if _budget_conn is None or not storage.spend_schedule_call(
+            _budget_conn, SCHEDULE_BUDGET, SCHEDULE_BUDGET_WINDOW_SEC):
+        _schedule_inflight.pop(flight_no, None)
+        log.warning("бюджет расписания исчерпан (%d за 31 день): %s только по табло",
+                    SCHEDULE_BUDGET, flight_no)
+        return []
     try:
         snaps = [_fill_places(s) for s in await SCHEDULE.fetch(flight_no)]
     except Exception:  # noqa: BLE001 — лимит/сеть: остаёмся с табло

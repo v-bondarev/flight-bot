@@ -5,7 +5,7 @@ import dataclasses
 import types
 from datetime import date
 
-from flight_bot import registry
+from flight_bot import registry, storage
 from flight_bot.models import FlightSnapshot, Leg
 from flight_bot.registry import upcoming
 
@@ -35,6 +35,11 @@ def _setup(monkeypatch, boards, schedule):
     monkeypatch.setattr(registry, "SCHEDULE", schedule)
     monkeypatch.setattr(registry, "_schedule_cache", {})
     monkeypatch.setattr(registry, "_schedule_inflight", {})
+    monkeypatch.setattr(registry, "_budget_conn", storage.connect(":memory:"))
+
+
+def _spent():
+    return registry._budget_conn.execute("SELECT COUNT(*) FROM schedule_calls").fetchone()[0]
 
 
 def _clock(monkeypatch):
@@ -124,6 +129,7 @@ def test_concurrent_searches_share_one_paid_request(monkeypatch):
     assert sched.calls == 1
     assert ra == rb and [s.date for s in ra] == ["2026-10-16"]
     assert registry._schedule_inflight == {}
+    assert _spent() == 1                             # ждавшие бюджет не тратят
 
 
 def test_schedule_cache_is_bounded_and_drops_expired(monkeypatch):
@@ -137,6 +143,33 @@ def test_schedule_cache_is_bounded_and_drops_expired(monkeypatch):
     assert registry.scheduled("BB2", "2026-10-16") is None     # протухшее не показываем
     asyncio.run(registry.schedule("DD4"))
     assert list(registry._schedule_cache) == ["DD4"]           # протухшие ушли при записи
+
+
+def test_schedule_budget_spent_only_on_real_requests(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+    monkeypatch.setattr(registry, "SCHEDULE_BUDGET", 2)
+    for no in ("AA1", "AA1", "BB2", "CC3"):
+        asyncio.run(registry.schedule(no))
+    assert sched.calls == 2                          # кэш-хит бесплатен, CC3 — сверх бюджета
+    assert "CC3" not in registry._schedule_cache     # отказ не кэшируем: окно освободится
+
+
+def test_failed_schedule_request_spends_budget(monkeypatch):
+    class _Broken:
+        async def fetch(self, *a, **kw):
+            raise RuntimeError("timeout")
+    _setup(monkeypatch, [], _Broken())
+    asyncio.run(registry.schedule("AA1"))
+    assert _spent() == 1                             # тарифицируют ли ошибки — не знаем
+
+
+def test_schedule_without_budget_db_never_pays(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+    monkeypatch.setattr(registry, "_budget_conn", None)
+    assert asyncio.run(registry.schedule("AA1")) == []
+    assert sched.calls == 0
 
 
 def test_scheduled_card_from_cache_but_polling_never_sees_schedule(monkeypatch):

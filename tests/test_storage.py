@@ -64,3 +64,13 @@ def test_last_snapshot_roundtrip():
     storage.set_last(conn, sid, snap)
     got = storage.get_last(conn, sid)
     assert got == snap  # frozen dataclass → сравнение по значению
+
+
+def test_schedule_budget_is_a_sliding_window_and_survives_reconnect(tmp_path):
+    path = str(tmp_path / "budget.sqlite")
+    conn = storage.connect(path)
+    assert [storage.spend_schedule_call(conn, 2, 100, now=t) for t in (0, 10, 20)] == [True, True, False]
+    conn.close()
+    conn = storage.connect(path)                                    # рестарт бюджет не обнуляет
+    assert storage.spend_schedule_call(conn, 2, 100, now=99) is False
+    assert storage.spend_schedule_call(conn, 2, 100, now=100) is True  # вызов в 0 вышел из окна
