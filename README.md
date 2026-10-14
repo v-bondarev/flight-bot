@@ -189,7 +189,8 @@ pytest
 ```
 
 CI — GitHub Actions (`.github/workflows/tests.yml`): pytest на Python 3.12 на каждый
-пуш и PR; для публичного репозитория бесплатно.
+пуш и PR; для публичного репозитория бесплатно. Пуш в `main`
+после зелёных тестов выкатывается на сервер (см. «Деплой»).
 
 Тесты не ходят в сеть: парсер SVO гоняется на боевой фикстуре, поллер — с
 подменённым источником.
@@ -207,7 +208,14 @@ sudo cp deploy/flight-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now flight-bot
 ```
 
-Обновление: `git pull && sudo systemctl restart flight-bot`.
+Обновление — автоматически: пуш в `main` с зелёными тестами выкатывает job `deploy`
+(`.github/workflows/tests.yml`) по SSH через `deploy/deploy.sh`: fast-forward на этот
+коммит, `pip install` при смене `requirements.txt`, рестарт, 30 с проверки, что сервис
+не перезапускается; не держится — откат на прежний коммит (ADR-0005). Установка ключа и
+sudoers — в заголовке `deploy/deploy.sh`. Секреты репозитория (environment `production`):
+`DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan -p <порт> <хост>`), `DEPLOY_TARGET`
+(`vbondarev@<хост>`), `DEPLOY_PORT` (пусто — 22). Вручную — как раньше:
+`git pull && sudo systemctl restart flight-bot`.
 
 Копия базы — каждый день в 04:00 МСК в `~/flight-bot-backup/daily`, 14 дней
 (`deploy/flight-bot-backup.timer`, инструкция в заголовке юнита). Вручную:
