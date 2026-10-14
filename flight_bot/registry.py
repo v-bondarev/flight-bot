@@ -35,6 +35,8 @@ SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource(), VkoSource(
 # подписок не ходит — только в поиск дат (search), с кэшем на SCHEDULE_TTL_SEC.
 SCHEDULE: Optional[FlightSource] = None
 SCHEDULE_TTL_SEC = 6 * 3600
+# Аэропорты наших табло: рейс сюда (а не отсюда) ищем на табло прилёта.
+BOARD_IATA = {"SVO", "DME", "VKO", "LED"}
 
 
 def configure(settings: Settings) -> None:
@@ -153,6 +155,24 @@ async def schedule(flight_no: str) -> List[FlightSnapshot]:
     return snaps
 
 
+def _board_side(s: FlightSnapshot) -> FlightSnapshot:
+    """Расписание смотрит со стороны вылета. Рейс к нам — на табло прилёта, а
+    там дата рейса — дата прилёта: приводим к тому же, иначе кнопка поведёт
+    опрос не на то табло, а дата не совпадёт с табловой."""
+    if s.dest_iata in BOARD_IATA and s.origin_iata not in BOARD_IATA and s.arrival.plan:
+        day = s.arrival.plan[:10]
+        return dataclasses.replace(s, direction="arrival", date=day, key=f"{s.flight}:{day}")
+    return s
+
+
+def scheduled(flight_no: str, date: str) -> Optional[FlightSnapshot]:
+    """Снимок из уже взятого при поиске расписания — для карточки при подписке.
+    Нового платного запроса не делает; в опрос не идёт: застывший план выдал
+    бы себя за живой статус и сбил бы диффер на стыке с табло."""
+    hit = _schedule_cache.get(flight_no)
+    return next((s for s in map(_board_side, hit[1]) if s.date == date), None) if hit else None
+
+
 async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSnapshot]:
     """Даты для подписки: сегодня…+HORIZON_DAYS. Табло богаче (стойки, выход),
     поэтому его снимок на дату главнее; расписание добирает даты, которых на
@@ -161,7 +181,8 @@ async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSna
     last = (today + timedelta(days=HORIZON_DAYS)).isoformat()
     boards = upcoming(await probe(flight_no), today)
     have = {s.date for s in boards}
-    extra = [s for s in upcoming(await schedule(flight_no), today) if s.date not in have]
+    extra = [s for s in upcoming([_board_side(s) for s in await schedule(flight_no)], today)
+             if s.date not in have]
     return sorted((s for s in boards + extra if s.date <= last), key=lambda s: s.date)
 
 
@@ -182,10 +203,7 @@ async def fetch_for(flight_no: str, date: str, direction: str,
         for s in snaps:
             if s.date == date:
                 return (await enrich_iata([s]))[0]
-    # Рейс ещё не на табло — снимок из расписания, если его уже брали при поиске
-    # (новый платный запрос ради опроса не делаем).
-    hit = _schedule_cache.get(flight_no)
-    return next((s for s in hit[1] if s.date == date), None) if hit else None
+    return None
 
 
 class BoardProbeResolver(AirportResolver):

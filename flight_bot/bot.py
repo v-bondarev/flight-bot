@@ -84,8 +84,15 @@ async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     source = parts[4] if len(parts) > 4 else ""
     storage.add(conn, cb.message.chat.id, flight, date, direction, source)
     snap = await registry.fetch_for(flight, date, direction, prefer=source)
-    text = "✅ Подписал. Текущий статус:\n\n" + status_card(snap) if snap \
-        else f"✅ Подписал на {flight} {date}."
+    planned = None if snap else registry.scheduled(flight, date)
+    if snap:
+        text = "✅ Подписал. Текущий статус:\n\n" + status_card(snap)
+    elif planned:
+        text = ("✅ Подписал. По расписанию:\n\n" + status_card(planned)
+                + "\n\nНа табло рейса пока нет — изменения начну присылать, "
+                  "как только он там появится (не раньше суток до вылета).")
+    else:
+        text = f"✅ Подписал на {flight} {date}."
     await cb.message.edit_text(text)
     await cb.answer()
 

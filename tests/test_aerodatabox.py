@@ -29,6 +29,17 @@ def test_parse_live_flight_takes_off_time_as_fact_and_predicted_arrival_as_estim
     assert (s.gate, s.baggage_belt) == ("A6b", "2")
 
 
+def test_parse_uncertain_cancel_is_not_cancel_and_arrived_never_fakes_fact_from_plan():
+    from flight_bot.models import is_cancelled
+    uncertain = [dict(PAYLOAD[2], status="CanceledUncertain")]
+    assert not is_cancelled(aerodatabox.parse(uncertain, "EK770")[0])
+    assert is_cancelled(aerodatabox.parse([dict(PAYLOAD[2], status="Canceled")], "EK770")[0])
+    bare = {k: v for k, v in PAYLOAD[2]["arrival"].items()
+            if k not in ("revisedTime", "predictedTime", "runwayTime")}
+    arrived = aerodatabox.parse([dict(PAYLOAD[2], status="Arrived", arrival=bare)], "EK770")[0]
+    assert arrived.arrival.fact is None                  # ни runwayTime, ни оценки — факта нет
+
+
 def test_parse_skips_other_numbers_and_empty_payload():
     assert aerodatabox.parse(PAYLOAD, "EK771") == []
     assert aerodatabox.parse([], "EK770") == []

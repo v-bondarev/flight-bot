@@ -36,7 +36,7 @@ STATUS = {
     "Arrived": "Прилетел",
     "Diverted": "Ушёл на запасной",
     "Canceled": "Отменён",
-    "CanceledUncertain": "Возможно отменён",
+    "CanceledUncertain": "Статус не подтверждён",   # без «отмен»: is_cancelled снял бы подписку
 }
 
 
@@ -73,9 +73,8 @@ def parse(payload: list, flight_no: str) -> List[FlightSnapshot]:
         arrived = raw == "Arrived"
         departure = _leg(dep, "runwayTime")
         arrival = _leg(arr, None)
-        if arrived:     # прилетел: последняя оценка и есть факт
-            arrival = Leg(plan=arrival.plan, fact=_iso(arr.get("runwayTime"))
-                          or arrival.est or arrival.plan)
+        if arrived:     # прилетел: последняя оценка и есть факт; план фактом не выдаём
+            arrival = Leg(plan=arrival.plan, fact=_iso(arr.get("runwayTime")) or arrival.est)
         day = (departure.plan or "")[:10]
         out.append(FlightSnapshot(
             flight=wanted,

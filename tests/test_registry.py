@@ -1,10 +1,11 @@
 """Выбор дат для подписки: прошедшие отрезаем, по одной кнопке на дату;
 даты, которых нет на табло, добираем из расписания на HORIZON_DAYS вперёд."""
 import asyncio
+import dataclasses
 from datetime import date
 
 from flight_bot import registry
-from flight_bot.models import FlightSnapshot
+from flight_bot.models import FlightSnapshot, Leg
 from flight_bot.registry import upcoming
 
 TODAY = date(2026, 10, 14)
@@ -76,12 +77,29 @@ def test_schedule_is_cached_and_failure_is_not_fatal(monkeypatch):
     assert [s.date for s in asyncio.run(registry.search("GF013", today=TODAY))] == ["2026-10-14"]
 
 
-def test_fetch_for_falls_back_to_cached_schedule_without_new_call(monkeypatch):
+def test_scheduled_card_from_cache_but_polling_never_sees_schedule(monkeypatch):
     sched = _Schedule([_snap("2026-10-17", source="aerodatabox.com")])
     _setup(monkeypatch, [], sched)
     monkeypatch.setattr(registry, "SOURCES", [])
     asyncio.run(registry.search("GF013", today=TODAY))
-    got = asyncio.run(registry.fetch_for("GF013", "2026-10-17", "departure"))
-    assert got is not None and got.source == "aerodatabox.com"
-    assert asyncio.run(registry.fetch_for("GF013", "2026-10-18", "departure")) is None
+    assert registry.scheduled("GF013", "2026-10-17").source == "aerodatabox.com"
+    assert registry.scheduled("GF013", "2026-10-18") is None
+    # опрос: застывший план не выдаём за живой статус → поллер уснёт до накануне
+    assert asyncio.run(registry.fetch_for("GF013", "2026-10-17", "departure")) is None
     assert sched.calls == 1
+
+
+def test_inbound_flight_goes_to_arrival_board_dated_by_arrival(monkeypatch):
+    inbound = FlightSnapshot(
+        flight="EK133", date="2026-10-16", direction="departure", origin_iata="DXB",
+        dest_iata="DME", status="", source="aerodatabox.com",
+        departure=Leg(plan="2026-10-16T23:50:00+04:00"),
+        arrival=Leg(plan="2026-10-17T04:10:00+03:00"))
+    board = dataclasses.replace(inbound, direction="arrival", date="2026-10-15", source="dme.ru")
+    _setup(monkeypatch, [board], _Schedule([dataclasses.replace(inbound, date="2026-10-14",
+                                                                arrival=Leg(plan="2026-10-15T04:10:00+03:00")),
+                                            inbound]))
+    got = asyncio.run(registry.search("EK133", today=TODAY))
+    assert [(s.date, s.direction, s.source) for s in got] == [
+        ("2026-10-15", "arrival", "dme.ru"),                # табло, без дубля из расписания
+        ("2026-10-17", "arrival", "aerodatabox.com")]       # дата прилёта, табло прилёта
