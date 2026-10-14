@@ -168,6 +168,15 @@ def test_gate_flicker_on_board_does_not_repush(monkeypatch):
     storage.add(conn, 42, "SU2128", "2026-09-06")
     send = _Sends()
     for i, gate in enumerate(["E14", "", "E14"]):
-        _fixed(_snap(gate=gate), monkeypatch)
+        _fixed(_snap(gate=gate, source="dme.ru"), monkeypatch)
         _run(conn, send, NOW + timedelta(minutes=10 * i))
     assert send.msgs == []                         # выход не «пропадал» и не «назначался» заново
+
+
+def test_other_sources_may_clear_gate(monkeypatch):
+    conn = storage.connect(":memory:")
+    storage.add(conn, 42, "SU2128", "2026-09-06")
+    for i, gate in enumerate(["129", ""]):
+        _fixed(_snap(gate=gate, source="svo.aero"), monkeypatch)
+        _run(conn, _Sends(), NOW + timedelta(minutes=10 * i))
+    assert storage.get_last(conn, storage.active_all(conn)[0]["id"]).gate == ""

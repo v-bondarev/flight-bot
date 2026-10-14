@@ -111,7 +111,8 @@ async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,
         storage.set_next(conn, sub_id, wake_at(row["date"], epoch, near))
         return
     prev = storage.get_last(conn, sub_id)
-    if prev is not None and prev.gate and not curr.gate and not curr.departure.fact:
+    if (prev is not None and curr.source == "dme.ru" and prev.gate and not curr.gate
+            and not curr.departure.fact):
         # Бегущая строка табло (DME) показывает выход не на каждом опросе: пропавший
         # выход не стираем, иначе его возвращение пришло бы повторным пушем.
         curr = dataclasses.replace(curr, gate=prev.gate)
