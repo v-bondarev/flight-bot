@@ -97,3 +97,11 @@ def test_checkin_before_midnight_for_night_flight_is_previous_day():
     page = _fx("dme_rows_ek132.html").replace("15 окт 23:10", "16 окт 01:10")
     s = dme.build(dme.parse_board(page, "EK132", date(2026, 10, 14))[2], {}, "departure")
     assert s.checkin.start_plan == "2026-10-15T20:10:00+03:00"
+
+
+def test_boarding_minutes_from_estimate_and_gate_formats():
+    t = dme._ticker("Начало посадки в 22:04 · Выход EA14", "2026-10-14T23:10:00+03:00",
+                    "2026-10-14T23:40:00+03:00")
+    assert t["boarding_min"] == "96" and t["gate"] == "EA14"   # задержка на 30 мин учтена
+    assert dme._ticker("Выход 12", "2026-10-14T23:10:00+03:00")["gate"] == "12"
+    assert dme._ticker("Выход C12a", "2026-10-14T23:10:00+03:00")["gate"] == "C12a"

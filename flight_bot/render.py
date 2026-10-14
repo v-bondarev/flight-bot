@@ -118,7 +118,7 @@ def countdown(s: FlightSnapshot, now: datetime) -> str:
     return ""
 
 
-def _tiles_departure(s: FlightSnapshot) -> List[str]:
+def _tiles_departure(s: FlightSnapshot, now: datetime) -> List[str]:
     ci, b = s.checkin, s.boarding
     live = ci.start_fact and not ci.finish_fact
     if ci.finish_fact:
@@ -126,7 +126,10 @@ def _tiles_departure(s: FlightSnapshot) -> List[str]:
     elif live:
         desks_note = "идёт до " + _hhmm(ci.finish_plan)
     elif ci.start_plan:
-        desks_note = "откроется в " + _hhmm(ci.start_plan)
+        # Факта открытия нет (DME): после планового времени «откроется» уже неправда.
+        st = _dt(ci.start_plan)
+        passed = st is not None and st.tzinfo is not None and st <= now
+        desks_note = ("по плану с " if passed else "откроется в ") + _hhmm(ci.start_plan)
     else:
         desks_note = "время не объявлено"
 
@@ -209,7 +212,7 @@ def status_card(s: FlightSnapshot, now: Optional[datetime] = None) -> str:
     if cd:
         lines.append(f"⏳ {cd}")
     lines.append("")
-    lines += _tiles_arrival(s) if s.direction == "arrival" else _tiles_departure(s)
+    lines += _tiles_arrival(s) if s.direction == "arrival" else _tiles_departure(s, now)
     lines += ["", "<b>📋 Хронология</b>"] + _steps(s)
     return "\n".join(line for line in lines if line is not None)
 

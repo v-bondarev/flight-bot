@@ -161,3 +161,13 @@ def test_one_failing_subscription_does_not_break_the_round(monkeypatch):
     assert by_id[bad]["next_at"] > epoch and by_id[good]["next_at"] > epoch
     assert storage.get_last(conn, bad).gate == "129"  # снимок упавшей не перезаписан
     assert storage.get_last(conn, good).gate == "141"
+
+
+def test_gate_flicker_on_board_does_not_repush(monkeypatch):
+    conn = storage.connect(":memory:")
+    storage.add(conn, 42, "SU2128", "2026-09-06")
+    send = _Sends()
+    for i, gate in enumerate(["E14", "", "E14"]):
+        _fixed(_snap(gate=gate), monkeypatch)
+        _run(conn, send, NOW + timedelta(minutes=10 * i))
+    assert send.msgs == []                         # выход не «пропадал» и не «назначался» заново

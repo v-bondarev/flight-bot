@@ -107,3 +107,11 @@ def test_zone_shown_instead_of_terminal_when_no_terminal():
     s = _su5822(terminal="", zone="E")
     card = status_card(s, NOW)
     assert "🏢 Зона вылета E" in card and "Терминал" not in card
+
+
+def test_checkin_tile_after_planned_start_without_fact():
+    from flight_bot.models import Checkin
+    s = _su5822(checkin=Checkin(desks="215-223", start_plan="2026-08-16T20:10:00+03:00"))
+    assert "по плану с 20:10" in status_card(s, NOW)              # 21:15 — уже после 20:10
+    early = NOW.replace(hour=19)
+    assert "откроется в 20:10" in status_card(s, early)

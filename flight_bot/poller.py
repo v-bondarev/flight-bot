@@ -14,6 +14,7 @@ send — async callable(chat_id, text, thread_id): развязывает пол
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -110,6 +111,10 @@ async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,
         storage.set_next(conn, sub_id, wake_at(row["date"], epoch, near))
         return
     prev = storage.get_last(conn, sub_id)
+    if prev is not None and prev.gate and not curr.gate and not curr.departure.fact:
+        # Бегущая строка табло (DME) показывает выход не на каждом опросе: пропавший
+        # выход не стираем, иначе его возвращение пришло бы повторным пушем.
+        curr = dataclasses.replace(curr, gate=prev.gate)
     if prev is not None:
         changes = diff_snapshots(prev, curr)
         if changes:

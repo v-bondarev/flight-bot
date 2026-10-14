@@ -123,8 +123,10 @@ def _at(day_iso: Optional[str], hhmm: str, not_before: Optional[str] = None) -> 
     return d.isoformat()
 
 
-def _ticker(text: str, plan: Optional[str]) -> Dict:
-    """Бегущая строка статуса → стойки, начало регистрации, выход, посадка за N мин."""
+def _ticker(text: str, plan: Optional[str], dep: Optional[str] = None) -> Dict:
+    """Бегущая строка статуса → стойки, начало регистрации, выход, посадка за N мин.
+    dep — ожидаемый вылет (оценка или план): «посадка за N мин» считаем от него."""
+    dep = dep or plan
     def grab(pattern: str) -> str:
         m = re.search(pattern, text)
         return m.group(1) if m else ""
@@ -134,10 +136,10 @@ def _ticker(text: str, plan: Optional[str]) -> Dict:
     boarding = _at(plan, grab(r"Начало посадки в (\d{1,2}:\d{2})"))
     if boarding and plan and boarding > plan:
         boarding = (datetime.fromisoformat(boarding) - timedelta(days=1)).isoformat()
-    minutes = int((datetime.fromisoformat(plan) - datetime.fromisoformat(boarding)).total_seconds()
-                  // 60) if boarding and plan else 0
+    minutes = int((datetime.fromisoformat(dep) - datetime.fromisoformat(boarding)).total_seconds()
+                  // 60) if boarding and dep else 0
     return {"desks": grab(r"на стойках ([\d,\- ]*\d)"), "checkin": checkin,
-            "gate": grab(r"Выход ([A-ZА-Я]?\d+[A-ZА-Я]?)"),
+            "gate": grab(r"Выход ([A-ZА-ЯЁ]{0,2}\d+[A-Za-zА-ЯЁа-яё]?)"),
             "boarding_min": str(minutes) if minutes > 0 else ""}
 
 
@@ -162,7 +164,7 @@ def build(row: Dict, det: Dict, direction: str) -> FlightSnapshot:
         origin_iata, origin_city, dest_iata, dest_city = "", row["city"], "DME", "Москва"
     if row["cancelled"] and "отмен" not in st:
         status = "Рейс отменен"
-    tick = _ticker(row.get("ticker", ""), row["plan"]) if direction == "departure" else {}
+    tick = _ticker(row.get("ticker", ""), row["plan"], own.est) if direction == "departure" else {}
     return FlightSnapshot(
         flight=row["flight"], date=(row["plan"] or "")[:10], direction=direction,
         origin_iata=origin_iata, dest_iata=dest_iata, status=status,
