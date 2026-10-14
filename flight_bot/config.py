@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, FrozenSet
+from datetime import date
+from typing import Dict, FrozenSet, Optional
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class Settings:
     render_cache_sec: int       # TTL кэша VKO HTTP-поиска и резервного HTML-рендера
     owner_ids: FrozenSet[int]   # Telegram user id, чьи команды и кнопки бот принимает в группах; пусто — все
     greet_names: Dict[str, str]  # username (без @, нижний регистр) → обращение на «вы» в приветствии
+    airlabs_key_expires: Optional[date] = None  # дата истечения ключа AirLabs (МСК); None — без напоминания
 
 
 def load_env(path: str = ".env") -> None:
@@ -65,6 +67,14 @@ def _greet_names(raw: str) -> Dict[str, str]:
     return out
 
 
+def _date(name: str) -> Optional[date]:
+    raw = os.getenv(name, "").strip()
+    try:
+        return date.fromisoformat(raw) if raw else None
+    except ValueError:
+        raise SystemExit(f"{name}: ожидается дата ГГГГ-ММ-ДД, а не {raw!r}")
+
+
 def load() -> Settings:
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", ""),
@@ -83,4 +93,5 @@ def load() -> Settings:
         render_cache_sec=int(os.getenv("RENDER_CACHE_SEC", "75")),
         owner_ids=_owner_ids(os.getenv("OWNER_IDS", "")),
         greet_names=_greet_names(os.getenv("GREET_NAMES", "")),
+        airlabs_key_expires=_date("AIRLABS_KEY_EXPIRES"),
     )

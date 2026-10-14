@@ -353,3 +353,15 @@ def test_source_errors_feed_health_and_empty_answer_is_success(monkeypatch):
     monkeypatch.setattr(registry, "SOURCES", [_Broken("pulkovoairport.ru"), _Board("svo.aero")])
     asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
     assert ("fail", "pulkovoairport.ru") in seen and ("ok", "svo.aero") in seen   # пусто — не сбой
+
+
+def test_probe_asks_airlabs_once_not_per_direction(monkeypatch):
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    from flight_bot.sources.airlabs import AirlabsSource
+
+    class _Airlabs(_Board, AirlabsSource):
+        pass
+    airlabs = _Airlabs("airlabs.co", [_snap("2026-10-14", source="airlabs.co")])
+    monkeypatch.setattr(registry, "SOURCES", [_Board("svo.aero"), airlabs])
+    assert asyncio.run(registry.probe("EK770"))[0].source == "airlabs.co"
+    assert airlabs.calls == 1                                # направление AirLabs не важно

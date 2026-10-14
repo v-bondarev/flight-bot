@@ -5,7 +5,9 @@
        dep_actual, dep_terminal, dep_gate, arr_*, arr_baggage, status, …}}
 
 Отдаёт ОДИН ближайший рейс (live/scheduled/landed), дату не выбрать — сверяем
-сами. Времена — локальные для каждого аэропорта, без офсета; офсет
+сами. Ошибку (ключ истёк, лимит) AirLabs может отдать телом {"error": {code, message}}
+без HTTP-кода ошибки — это исключение, а не «рейса нет», иначе мониторинг её не увидит.
+Времена — локальные для каждого аэропорта, без офсета; офсет
 восстанавливаем по паре local/utc, иначе снапшот несравним с табло (там ISO
 с офсетом) и отсчёт «до вылета» упал бы на naive-datetime.
 """
@@ -49,8 +51,16 @@ def _iso(local: Optional[str], off: Optional[timedelta]) -> Optional[str]:
     return (d.replace(tzinfo=timezone(off)) if off is not None else d).isoformat()
 
 
+class AirlabsError(RuntimeError):
+    """Ошибка в теле ответа AirLabs: код и текст, без URL и ключа."""
+
+
 def parse(payload: dict, flight_no: str) -> Optional[FlightSnapshot]:
     """Чистый парсер ответа — без сети."""
+    err = payload.get("error")
+    if err:
+        raise AirlabsError(f"{err.get('code', '')}: {err.get('message', '')}"
+                           if isinstance(err, dict) else str(err))
     r = payload.get("response") or {}
     if isinstance(r, list):
         r = r[0] if r else {}

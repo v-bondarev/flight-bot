@@ -5,6 +5,9 @@
 пустой ответ («рейса нет») — это успех. Порог: не меньше `fails` ошибок подряд
 и не меньше `after_sec` с первой из них — короткий сбой сети не тревожит.
 Состояние в памяти процесса: после рестарта считаем заново.
+
+Срок ключа (`remind_expiry`): за неделю до даты истечения и после неё — одно
+напоминание владельцу в день; рестарт может повторить его в тот же день.
 """
 from __future__ import annotations
 
@@ -12,7 +15,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Awaitable, Callable, Dict, Optional, Set
 
 from flight_bot.http import describe
@@ -37,6 +40,7 @@ class Health:
         self.notify, self._clock = notify, clock
         self.fails_needed, self.after_sec = fails, after_sec
         self._state: Dict[str, _State] = {}
+        self._reminded: Dict[str, date] = {}
         self._tasks: Set["asyncio.Future"] = set()
 
     def _send(self, text: str) -> None:
@@ -64,6 +68,19 @@ class Health:
         if st.alerted:
             self._send(f"✅ Источник {source} снова отвечает (сбой с {st.since_msk} МСК)")
         self._state[source] = _State()
+
+    def remind_expiry(self, name: str, expires: date, today: date, days: int = 7) -> None:
+        left = (expires - today).days
+        if left > days or self._reminded.get(name) == today:
+            return
+        self._reminded[name] = today
+        when = f"{expires:%d.%m.%Y}"
+        if left > 0:
+            self._send(f"⏳ Ключ {name} истекает {when} — осталось {left} дн. Продлите и обновите .env")
+        elif left == 0:
+            self._send(f"⏳ Ключ {name} истекает сегодня, {when}. Продлите и обновите .env")
+        else:
+            self._send(f"⚠️ Ключ {name} истёк {when}. Продлите и обновите .env")
 
 
 # Общий на процесс; main подключает отправку владельцу.

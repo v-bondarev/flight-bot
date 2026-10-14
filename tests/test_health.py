@@ -73,3 +73,37 @@ def test_redact_bot_token_and_proxy_credentials():
     assert redact("POST https://api.telegram.org/bot8641528072:AAH-x_y/sendMessage") == \
         "POST https://api.telegram.org/bot[скрыто]/sendMessage"
     assert redact("socks5://user:p4ss@127.0.0.1:1080") == "socks5://[скрыто]@127.0.0.1:1080"
+
+
+def test_key_expiry_reminder_last_week_once_a_day():
+    from datetime import date
+    sent = []
+
+    async def notify(text):
+        sent.append(text)
+    h = health.Health(notify)
+    exp = date(2026, 11, 5)
+    _run(lambda: h.remind_expiry("AirLabs", exp, date(2026, 10, 28)))   # 8 дней — рано
+    assert sent == []
+    _run(lambda: h.remind_expiry("AirLabs", exp, date(2026, 10, 29)))   # 7 дней
+    _run(lambda: h.remind_expiry("AirLabs", exp, date(2026, 10, 29)))   # тот же день — молчим
+    assert len(sent) == 1 and "AirLabs" in sent[0] and "05.11.2026" in sent[0] and "7 дн" in sent[0]
+    _run(lambda: h.remind_expiry("AirLabs", exp, date(2026, 11, 5)))
+    assert "сегодня" in sent[1]
+    _run(lambda: h.remind_expiry("AirLabs", exp, date(2026, 11, 6)))
+    assert "истёк" in sent[2] and len(sent) == 3
+
+
+def test_key_expiry_setting_parsed_and_validated(monkeypatch):
+    from datetime import date
+
+    import pytest
+
+    from flight_bot import config
+    monkeypatch.setenv("AIRLABS_KEY_EXPIRES", "2026-11-05")
+    assert config.load().airlabs_key_expires == date(2026, 11, 5)
+    monkeypatch.setenv("AIRLABS_KEY_EXPIRES", "")
+    assert config.load().airlabs_key_expires is None                  # пусто — без напоминания
+    monkeypatch.setenv("AIRLABS_KEY_EXPIRES", "05.11.2026")
+    with pytest.raises(SystemExit, match="AIRLABS_KEY_EXPIRES"):
+        config.load()
