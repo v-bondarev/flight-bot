@@ -108,3 +108,16 @@ def test_thread_id_kept_and_migrated_into_old_db():
     assert storage.active_all(conn)[0]["thread_id"] == 7
     storage.add(conn, -1001, "SU2128", "2026-09-06")    # из General — тема снимается
     assert storage.active_all(conn)[0]["thread_id"] is None
+
+
+def test_migrate_chat_keeps_live_sub_when_new_chat_has_it_inactive():
+    conn = _conn()
+    storage.add(conn, -1, "SU1", "2026-09-06")
+    storage.remove(conn, -1, storage.list_for_chat(conn, -1)[0]["id"])   # снятая
+    storage.add(conn, -1, "SU2", "2026-09-06")                            # живая
+    sid = storage.add(conn, -1001, "SU2", "2026-09-06")
+    storage.remove(conn, -1001, sid)                                      # в новом — снятая
+    assert storage.migrate_chat(conn, -1, -1001) == 1
+    got = [(r["chat_id"], r["flight"]) for r in storage.active_all(conn)]
+    assert got == [(-1001, "SU2")]                                        # живая не потерялась
+    assert storage.migrate_chat(conn, -1, -1001) == 0

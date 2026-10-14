@@ -121,19 +121,25 @@ def deactivate_chat(conn: sqlite3.Connection, chat_id: int) -> int:
 def migrate_chat(conn: sqlite3.Connection, old_chat_id: int, new_chat_id: int) -> int:
     """Группа стала супергруппой — перенести подписки на новый chat_id.
 
-    Если в новом чате такая подписка уже есть (UNIQUE), старую строку гасим:
-    две живые копии одной подписки дали бы двойные пуши. Возвращает число
-    перенесённых строк.
+    Переносим только живые. Если в новом чате такая подписка уже есть (UNIQUE),
+    оживляем её, а старую гасим: две живые копии дали бы двойные пуши.
+    Возвращает, сколько живых подписок оказалось в новом чате благодаря переносу.
     """
-    cur = conn.execute(
-        "UPDATE OR IGNORE subscriptions SET chat_id=? WHERE chat_id=?",
+    moved = conn.execute(
+        "UPDATE OR IGNORE subscriptions SET chat_id=? WHERE chat_id=? AND active=1",
         (new_chat_id, old_chat_id),
-    )
+    ).rowcount
+    revived = conn.execute(
+        """UPDATE subscriptions SET active=1
+           WHERE chat_id=? AND active=0 AND (flight, date) IN
+                 (SELECT flight, date FROM subscriptions WHERE chat_id=? AND active=1)""",
+        (new_chat_id, old_chat_id),
+    ).rowcount
     conn.execute(
         "UPDATE subscriptions SET active=0 WHERE chat_id=? AND active=1", (old_chat_id,)
     )
     conn.commit()
-    return cur.rowcount
+    return moved + revived
 
 
 def get_last(conn: sqlite3.Connection, sub_id: int) -> Optional[FlightSnapshot]:
