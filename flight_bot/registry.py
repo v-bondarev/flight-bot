@@ -159,7 +159,8 @@ async def _ask(src: FlightSource, flight_no: str, date: Optional[str],
     try:
         return await asyncio.wait_for(cached_fetch(src, flight_no, date, direction),
                                       PROBE_TIMEOUT_SEC)
-    except Exception:  # noqa: BLE001 — источник отвалился или тормозит: для поиска пусто
+    except Exception as exc:  # noqa: BLE001 — источник отвалился или тормозит: для поиска пусто
+        log.warning("проба %s %s %s: %r", src.name, flight_no, direction, exc)
         return []
 
 
