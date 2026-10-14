@@ -1,6 +1,7 @@
 """Подписки и последний снимок рейса — в SQLite. Синхронно: запросы копеечные.
 
-Одна подписка = (chat_id, рейс, дата, направление). Last-снимок храним прямо в
+Одна подписка = (chat_id, рейс, дата, направление); thread_id — тема форума,
+куда слать пуши (NULL — General или обычный чат). Last-снимок храним прямо в
 строке (JSON) — отдельная таблица снапшотов на таком объёме избыточна.
 """
 from __future__ import annotations
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     last_json  TEXT,
     next_at    INTEGER NOT NULL DEFAULT 0,   -- epoch следующего опроса (адаптивный)
     source     TEXT    NOT NULL DEFAULT '',  -- где рейс нашли при подписке (опрашиваем первым)
+    thread_id  INTEGER,                      -- тема форума, где подписались
     UNIQUE(chat_id, flight, date)
 );
 CREATE TABLE IF NOT EXISTS schedule_calls (
@@ -36,6 +38,7 @@ CREATE TABLE IF NOT EXISTS schedule_calls (
 # базу не принесёт, поэтому доливаем ALTER'ом.
 _MIGRATIONS = {
     "source": "ALTER TABLE subscriptions ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+    "thread_id": "ALTER TABLE subscriptions ADD COLUMN thread_id INTEGER",
 }
 
 
@@ -53,15 +56,18 @@ def connect(path: str) -> sqlite3.Connection:
 
 
 def add(conn: sqlite3.Connection, chat_id: int, flight: str, date: str,
-        direction: str = "departure", source: str = "") -> int:
-    """Подписать (или реактивировать, если та же уже была). Возвращает id."""
+        direction: str = "departure", source: str = "",
+        thread_id: Optional[int] = None) -> int:
+    """Подписать (или реактивировать, если та же уже была). Возвращает id.
+    Повторная подписка переносит пуши в тему, откуда подписались последний раз."""
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
-        """INSERT INTO subscriptions (chat_id, flight, date, direction, active, created_at, source)
-           VALUES (?, ?, ?, ?, 1, ?, ?)
+        """INSERT INTO subscriptions (chat_id, flight, date, direction, active, created_at, source, thread_id)
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?)
            ON CONFLICT(chat_id, flight, date)
-           DO UPDATE SET active=1, direction=excluded.direction, source=excluded.source""",
-        (chat_id, flight.upper(), date, direction, now, source),
+           DO UPDATE SET active=1, direction=excluded.direction, source=excluded.source,
+                         thread_id=excluded.thread_id""",
+        (chat_id, flight.upper(), date, direction, now, source, thread_id),
     )
     conn.commit()
     row = conn.execute(
@@ -105,6 +111,49 @@ def remove(conn: sqlite3.Connection, chat_id: int, sub_id: int) -> bool:
 def deactivate(conn: sqlite3.Connection, sub_id: int) -> None:
     conn.execute("UPDATE subscriptions SET active=0 WHERE id=?", (sub_id,))
     conn.commit()
+
+
+def deactivate_chat(conn: sqlite3.Connection, chat_id: int) -> int:
+    """Снять все подписки чата (бота выгнали, чат удалён). Возвращает число строк."""
+    cur = conn.execute(
+        "UPDATE subscriptions SET active=0 WHERE chat_id=? AND active=1", (chat_id,)
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def migrate_chat(conn: sqlite3.Connection, old_chat_id: int, new_chat_id: int) -> int:
+    """Группа стала супергруппой — перенести подписки на новый chat_id.
+
+    Переносим только живые. Если в новом чате такая подписка уже есть (UNIQUE),
+    оживляем её, а старую гасим: две живые копии дали бы двойные пуши.
+    Возвращает, сколько живых подписок оказалось в новом чате благодаря переносу.
+    """
+    moved = conn.execute(
+        "UPDATE OR IGNORE subscriptions SET chat_id=? WHERE chat_id=? AND active=1",
+        (new_chat_id, old_chat_id),
+    ).rowcount
+    revived = conn.execute(
+        """UPDATE subscriptions SET active=1
+           WHERE chat_id=? AND active=0 AND (flight, date) IN
+                 (SELECT flight, date FROM subscriptions WHERE chat_id=? AND active=1)""",
+        (new_chat_id, old_chat_id),
+    ).rowcount
+    conn.execute(
+        "UPDATE subscriptions SET active=0 WHERE chat_id=? AND active=1", (old_chat_id,)
+    )
+    conn.commit()
+    return moved + revived
+
+
+def clear_thread(conn: sqlite3.Connection, chat_id: int, thread_id: int) -> int:
+    """Тему форума удалили — её подписки дальше шлют в General."""
+    cur = conn.execute(
+        "UPDATE subscriptions SET thread_id=NULL WHERE chat_id=? AND thread_id=?",
+        (chat_id, thread_id),
+    )
+    conn.commit()
+    return cur.rowcount
 
 
 def get_last(conn: sqlite3.Connection, sub_id: int) -> Optional[FlightSnapshot]:

@@ -23,9 +23,11 @@ def _snap(**kw):
 class _Sends:
     def __init__(self):
         self.msgs = []
+        self.threads = []
 
-    async def __call__(self, chat_id, text):
+    async def __call__(self, chat_id, text, thread_id=None):
         self.msgs.append((chat_id, text))
+        self.threads.append(thread_id)
 
 
 def _fixed(snap, monkeypatch):
@@ -50,6 +52,17 @@ def test_first_poll_silent_then_change_notifies(monkeypatch):
     _run(conn, send, NOW + timedelta(minutes=10))   # next_at уже наступил
     assert len(send.msgs) == 1 and send.msgs[0][0] == 42
     assert "129 → 141" in send.msgs[0][1]
+
+
+def test_push_goes_to_subscription_topic(monkeypatch):
+    conn = storage.connect(":memory:")
+    storage.add(conn, -1001, "SU2128", "2026-09-06", thread_id=7)
+    send = _Sends()
+    _fixed(_snap(gate="129"), monkeypatch)
+    _run(conn, send)
+    _fixed(_snap(gate="141"), monkeypatch)
+    _run(conn, send, NOW + timedelta(minutes=10))
+    assert send.threads == [7]
 
 
 def test_not_due_is_skipped(monkeypatch):
