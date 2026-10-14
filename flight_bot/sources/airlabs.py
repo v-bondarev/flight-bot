@@ -7,6 +7,7 @@
 Отдаёт ОДИН ближайший рейс (live/scheduled/landed), дату не выбрать — сверяем
 сами. Ошибку (ключ истёк, лимит) AirLabs может отдать телом {"error": {code, message}}
 без HTTP-кода ошибки — это исключение, а не «рейса нет», иначе мониторинг её не увидит.
+Исключение — `not_found`: так AirLabs отвечает на неизвестный рейс.
 Времена — локальные для каждого аэропорта, без офсета; офсет
 восстанавливаем по паре local/utc, иначе снапшот несравним с табло (там ISO
 с офсетом) и отсчёт «до вылета» упал бы на naive-datetime.
@@ -58,6 +59,8 @@ class AirlabsError(RuntimeError):
 def parse(payload: dict, flight_no: str) -> Optional[FlightSnapshot]:
     """Чистый парсер ответа — без сети."""
     err = payload.get("error")
+    if isinstance(err, dict) and err.get("code") == "not_found":
+        return None                     # неизвестный рейс AirLabs тоже отдаёт ошибкой
     if err:
         raise AirlabsError(f"{err.get('code', '')}: {err.get('message', '')}"
                            if isinstance(err, dict) else str(err))
