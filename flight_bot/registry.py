@@ -152,9 +152,8 @@ async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
                 al = await airlabs.fetch(s.flight)
                 _iata_cache[s.flight] = (al[0].origin_iata, al[0].dest_iata) if al else ("", "")
             except Exception as exc:  # noqa: BLE001 — обогащение не должно ломать основной путь
-                health.HEALTH.fail(airlabs.name, exc)
-                _iata_cache[s.flight] = ("", "")
-        o, d = _iata_cache[s.flight]
+                health.HEALTH.fail(airlabs.name, exc)   # ошибку не запоминаем: спросим в следующий раз
+        o, d = _iata_cache.get(s.flight, ("", ""))
         known_ok = (s.origin_iata and s.origin_iata == o) or (s.dest_iata and s.dest_iata == d)
         if known_ok:
             s = _fill_places(dataclasses.replace(s, origin_iata=s.origin_iata or o,

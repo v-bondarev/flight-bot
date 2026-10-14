@@ -92,3 +92,22 @@ def test_enrich_error_reaches_health(monkeypatch):
     registry._iata_cache.clear()
     assert asyncio.run(registry.enrich_iata([_snap()]))[0].dest_iata == ""
     assert failed == ["airlabs.co"]
+
+
+def test_enrich_does_not_remember_airlabs_failure(monkeypatch):
+    """Сбой AirLabs не должен до рестарта помечать рейс как «кодов нет»."""
+    from flight_bot import health
+
+    class _Down(_Airlabs):
+        async def fetch(self, *a, **kw):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("502")
+            return [_snap(origin_iata="DME", dest_iata="KZN", source="airlabs.co")]
+    al = _Down(("DME", "KZN"))
+    monkeypatch.setattr(registry, "SOURCES", [al])
+    monkeypatch.setattr(health, "HEALTH", health.Health())
+    registry._iata_cache.clear()
+    assert asyncio.run(registry.enrich_iata([_snap()]))[0].dest_iata == ""
+    assert asyncio.run(registry.enrich_iata([_snap()]))[0].dest_iata == "KZN"
+    assert al.calls == 2
