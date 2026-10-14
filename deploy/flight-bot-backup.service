@@ -1,0 +1,13 @@
+# Ежедневная копия базы подписок (flight_bot/backup.py), запускается таймером.
+#   sudo cp /opt/flight-bot/deploy/flight-bot-backup.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now flight-bot-backup.timer
+#   systemctl list-timers flight-bot-backup.timer
+[Unit]
+Description=flight-bot — ежедневная копия базы подписок
+
+[Service]
+Type=oneshot
+User=vbondarev
+WorkingDirectory=/opt/flight-bot
+Environment=FLIGHT_BOT_ENV=/opt/flight-bot/.env
+ExecStart=/opt/flight-bot/.venv/bin/python -m flight_bot.backup

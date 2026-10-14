@@ -202,6 +202,10 @@ sudo systemctl daemon-reload && sudo systemctl enable --now flight-bot
 
 Обновление: `git pull && sudo systemctl restart flight-bot`.
 
+Копия базы — каждый день в 04:00 МСК в `~/flight-bot-backup/daily`, 14 дней
+(`deploy/flight-bot-backup.timer`, инструкция в заголовке юнита). Вручную:
+`.venv/bin/python -m flight_bot.backup`.
+
 Транспорт для табло с гео-блоком и для табло «только для браузера» —
 `deploy/ru-proxy.service` (SSH-туннель до RU-хоста: SOCKS + проброс порта
 рендер-сервиса) и `deploy/render` (Docker на RU-хосте). AeroDataBox

@@ -1,0 +1,9 @@
+[Unit]
+Description=flight-bot — копия базы каждый день в 04:00 МСК
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target
