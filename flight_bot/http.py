@@ -49,9 +49,16 @@ _HOP_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, http
 _SECRET_RE = re.compile(r"((?:api_key|apikey|token|key|access_token)=)[^&\s'\"]+", re.I)
 
 
+_BOT_TOKEN_RE = re.compile(r"(/bot)\d+:[\w-]+")          # api.telegram.org/bot<токен>/
+_URL_CREDS_RE = re.compile(r"(://)[^/@\s:]+:[^/@\s]+@")     # socks5://user:pass@host
+
+
 def redact(text: str) -> str:
-    """Вырезать значения секретных параметров из текста (URL в ошибках httpx, трейсбеки)."""
-    return _SECRET_RE.sub(r"\1[скрыто]", text)
+    """Вырезать секреты из текста (URL в ошибках httpx, трейсбеки): параметры-ключи,
+    токен бота в пути, логин:пароль в адресе прокси."""
+    text = _SECRET_RE.sub(r"\1[скрыто]", text)
+    text = _BOT_TOKEN_RE.sub(r"\1[скрыто]", text)
+    return _URL_CREDS_RE.sub(r"\1[скрыто]@", text)
 
 
 def describe(exc: BaseException) -> str:

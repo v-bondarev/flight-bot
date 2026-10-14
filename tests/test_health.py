@@ -66,3 +66,10 @@ def test_alert_and_log_do_not_leak_keys_from_httpx_urls(caplog):
     assert len(sent) == 1 and "SECRET123" not in sent[0] and "SECRET123" not in caplog.text
     assert redact("GET https://api.scrape.do/?token=ABC123&url=x") == \
         "GET https://api.scrape.do/?token=[скрыто]&url=x"
+
+
+def test_redact_bot_token_and_proxy_credentials():
+    from flight_bot.http import redact
+    assert redact("POST https://api.telegram.org/bot8641528072:AAH-x_y/sendMessage") == \
+        "POST https://api.telegram.org/bot[скрыто]/sendMessage"
+    assert redact("socks5://user:p4ss@127.0.0.1:1080") == "socks5://[скрыто]@127.0.0.1:1080"
