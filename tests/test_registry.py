@@ -3,6 +3,8 @@
 import asyncio
 import dataclasses
 import types
+
+import pytest
 from datetime import date
 
 from flight_bot import registry, storage
@@ -130,6 +132,22 @@ def test_concurrent_searches_share_one_paid_request(monkeypatch):
     assert ra == rb and [s.date for s in ra] == ["2026-10-16"]
     assert registry._schedule_inflight == {}
     assert _spent() == 1                             # ждавшие бюджет не тратят
+
+
+def test_request_cancelled_before_start_does_not_poison_number(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+
+    async def run():
+        waiter = asyncio.create_task(registry.schedule("GF013"))
+        await asyncio.sleep(0)                       # задача запроса создана, но не стартовала
+        assert sched.calls == 0
+        registry._schedule_inflight["GF013"].cancel()   # так бывает при остановке цикла
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        return await registry.schedule("GF013")
+    assert [s.date for s in asyncio.run(run())] == ["2026-10-16"]
+    assert sched.calls == 1
 
 
 def test_schedule_cache_is_bounded_and_drops_expired(monkeypatch):

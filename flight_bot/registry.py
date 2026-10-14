@@ -172,7 +172,6 @@ async def _load(flight_no: str) -> List[FlightSnapshot]:
     # Попытку списываем до запроса: тарифицирует ли RapidAPI ошибки — не знаем.
     if _budget_conn is None or not storage.spend_schedule_call(
             _budget_conn, SCHEDULE_BUDGET, SCHEDULE_BUDGET_WINDOW_SEC):
-        _schedule_inflight.pop(flight_no, None)
         log.warning("бюджет расписания исчерпан (%d за 31 день): %s только по табло",
                     SCHEDULE_BUDGET, flight_no)
         return []
@@ -183,8 +182,6 @@ async def _load(flight_no: str) -> List[FlightSnapshot]:
         snaps, ttl = [], SCHEDULE_FAIL_TTL_SEC
     else:
         ttl = SCHEDULE_TTL_SEC
-    finally:
-        _schedule_inflight.pop(flight_no, None)
     _remember(flight_no, snaps, ttl)
     return snaps
 
@@ -199,6 +196,8 @@ async def schedule(flight_no: str) -> List[FlightSnapshot]:
     task = _schedule_inflight.get(flight_no)
     if task is None:
         task = _schedule_inflight[flight_no] = asyncio.ensure_future(_load(flight_no))
+        # Снаружи, а не finally в _load: отменённая до старта задача finally не выполнит.
+        task.add_done_callback(lambda _: _schedule_inflight.pop(flight_no, None))
     return await asyncio.shield(task)   # отмена одного ждущего не отменяет общий запрос
 
 
