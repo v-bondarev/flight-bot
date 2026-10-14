@@ -151,3 +151,20 @@ def test_shared_fetch_merges_concurrent_loads_and_does_not_cache_errors():
     calls.clear()
     asyncio.run(twice())
     assert len(calls) == 2
+
+
+def test_buried_hop_is_retried_after_retry_sec():
+    """Один обрыв прямого пути не должен навсегда уводить табло в платный scrape.do."""
+    now = [0.0]
+    net = _Net()
+    f = Fetcher("KEY", "socks5://127.0.0.1:1080", client_factory=net.factory,
+                retry_sec=300, clock=lambda: now[0])
+    asyncio.run(f.get(URL, P))
+    assert f.direct_blocked
+    now[0] = 299
+    asyncio.run(f.get(URL, P))
+    assert net.calls[-1][0] == "socks5://127.0.0.1:1080" and len(net.calls) == 3
+    now[0] = 301
+    net.direct_ok = True                       # сеть ожила
+    assert asyncio.run(f.get(URL, P)) == "direct"
+    assert not f.direct_blocked

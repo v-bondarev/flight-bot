@@ -3,10 +3,11 @@
 dme.ru не отвечает с зарубежного адреса сервера бота, с российского —
 отвечает. Свой прокси — SSH-туннель с SOCKS до RU-хоста (RU_PROXY_URL,
 например socks5://127.0.0.1:1080), scrape.do (geoCode=ru) — платный резерв.
-Провал ступени запоминаем на процесс, но только когда есть следующая: иначе
+Провал ступени запоминаем на RETRY_SEC, но только когда есть следующая: иначе
 каждый опрос платил бы таймаутом соединения. Последнюю ступень не хороним —
 её пробуем каждый раз (туннель может подняться), ошибка уходит наружу.
-Сброс — перезапуском.
+Через RETRY_SEC ступень пробуется снова: один обрыв сети не должен до
+рестарта гонять все табло через платный scrape.do.
 """
 from __future__ import annotations
 
@@ -43,6 +44,7 @@ def _scrapedo_semaphore() -> asyncio.Semaphore:
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 _HOP_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ProxyError)
+RETRY_SEC = 300.0    # через сколько пробовать похороненную ступень снова
 
 
 # Значения секретных параметров URL: ключи AirLabs/scrape.do ходят в query-строке.
@@ -164,14 +166,27 @@ class Renderer:
 class Fetcher:
     def __init__(self, scrapedo_api_key: str = "", ru_proxy_url: str = "",
                  timeout: float = 20.0, connect_timeout: float = 6.0,
-                 client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient):
+                 client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
+                 retry_sec: float = RETRY_SEC, clock: Callable[[], float] = time.monotonic):
         self.api_key = scrapedo_api_key
         self.ru_proxy_url = ru_proxy_url
         self._timeout = timeout
         self._connect = connect_timeout
         self._factory = client_factory
-        self.direct_blocked = False
-        self.proxy_blocked = False
+        self._retry, self._clock = retry_sec, clock
+        self._down: Dict[str, float] = {}     # ступень → когда похоронили
+
+    def _blocked(self, hop: str) -> bool:
+        at = self._down.get(hop)
+        return at is not None and self._clock() - at < self._retry
+
+    @property
+    def direct_blocked(self) -> bool:
+        return self._blocked("direct")
+
+    @property
+    def proxy_blocked(self) -> bool:
+        return self._blocked("proxy")
 
     async def _via(self, proxy: Optional[str], url: str, params: Optional[dict]) -> str:
         async with self._factory(proxy=proxy, headers={"User-Agent": UA},
@@ -184,18 +199,24 @@ class Fetcher:
     async def get(self, url: str, params: Optional[dict] = None) -> str:
         if not self.direct_blocked:
             try:
-                return await self._via(None, url, params)
+                got = await self._via(None, url, params)
             except _HOP_ERRORS:
                 if not (self.ru_proxy_url or self.api_key):
                     raise
-                self.direct_blocked = True
+                self._down["direct"] = self._clock()
+            else:
+                self._down.pop("direct", None)
+                return got
         if self.ru_proxy_url and not self.proxy_blocked:
             try:
-                return await self._via(self.ru_proxy_url, url, params)
+                got = await self._via(self.ru_proxy_url, url, params)
             except _HOP_ERRORS:
                 if not self.api_key:
                     raise
-                self.proxy_blocked = True
+                self._down["proxy"] = self._clock()
+            else:
+                self._down.pop("proxy", None)
+                return got
         target = str(httpx.URL(url, params=params or {}))
         async with _scrapedo_semaphore():
             async with self._factory(headers={"User-Agent": UA}) as client:
