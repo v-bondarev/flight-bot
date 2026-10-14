@@ -30,7 +30,12 @@ AST = timezone(timedelta(hours=3))
 DAY_TTL_SEC = 60.0
 FUTURE_SLACK = timedelta(minutes=10)   # часы сервера и табло расходятся на минуты
 
-STATUS = {"on time": "По расписанию", "early": "Раньше расписания", "delayed": "Задерживается"}
+# (ключевое слово, текст): первое совпадение по порядку. Полного словаря табло нет.
+WORDS = (("final", "Посадка заканчивается"), ("gate clos", "Посадка закончена"),
+         ("closed", "Посадка закончена"), ("board", "Посадка"), ("gate open", "Посадка"),
+         ("check", "Регистрация"), ("divert", "Ушёл на запасной"), ("delay", "Задерживается"),
+         ("early", "Раньше расписания"), ("on time", "По расписанию"), ("schedul", "По расписанию"),
+         ("estimat", "Ожидается"), ("expect", "Ожидается"))
 
 
 def _status(raw: str) -> tuple:
@@ -42,7 +47,7 @@ def _status(raw: str) -> tuple:
         return "Приземлился", True
     if "depart" in low or "airborne" in low:
         return "Вылетел", True
-    return STATUS.get(low, raw), False
+    return next((text for word, text in WORDS if word in low), raw), False
 
 
 def _at(day: str, hhmm: str) -> Optional[str]:

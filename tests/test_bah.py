@@ -40,3 +40,12 @@ def test_status_by_meaning_cancel_and_arrived():
     landed = dict(FX["arrivals 14/10"]["data"][1], remarks="Arrived")
     s = bah.parse([landed], "GF6", "arrival", NOW)[0]
     assert s.arrival.fact == "2026-10-14T06:31:00+03:00" and s.status == "Приземлился"
+
+
+def test_english_statuses_translated_by_meaning():
+    row = dict(FX["departures 15/10"]["data"][0])
+    cases = {"Boarding": "Посадка", "Gate Open": "Посадка", "Final Call": "Посадка заканчивается",
+             "Gate Closed": "Посадка закончена", "Check-in Open": "Регистрация",
+             "Delayed": "Задерживается", "Diverted": "Ушёл на запасной", "Something New": "Something New"}
+    for raw, text in cases.items():
+        assert bah.parse([dict(row, remarks=raw)], "GF12", "departure", NOW)[0].status == text, raw

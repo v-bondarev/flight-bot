@@ -15,7 +15,7 @@ def test_departure_ek770_times_are_local_plus4_not_utc():
     assert (s.origin_iata, s.dest_iata, s.terminal, s.gate) == ("DXB", "CPT", "3", "A6b")
     assert s.departure.plan == "2026-10-14T09:10:00+04:00"
     assert s.departure.est == "2026-10-14T09:30:00+04:00"
-    assert s.departure.fact == "2026-10-14T09:21:13+04:00"     # уход со стоянки
+    assert s.departure.fact == "2026-10-14T09:40:44+04:00"     # взлёт, а не уход со стоянки 09:21
     assert s.status == "Вылетел" and s.source == "dubaiairports.ae"
     assert snaps[2].departure.fact is None and snaps[2].status == "Ожидается"
 

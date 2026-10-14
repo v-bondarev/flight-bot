@@ -12,7 +12,8 @@
 UTC — только LastFetchedAt. Файл ~3,7 МБ на весь аэропорт — один на все подписки:
 держим FILE_TTL_SEC, одновременные загрузки склеиваем. Только напрямую: тащить такой
 файл через платный scrape.do незачем (с сервера бота хост открыт).
-Стоек и посадки табло не даёт; факт вылета — уход со стоянки (off-block), не взлёт.
+Стоек и посадки табло не даёт. Факт вылета — взлёт (actualTakeOffTime), прилёта — постановка
+на стоянку (actualOnBlockTime).
 """
 from __future__ import annotations
 
@@ -60,7 +61,9 @@ def build(f: dict, wanted: str, direction: str) -> FlightSnapshot:
     side = "OffBlockTime" if direction == "departure" else "OnBlockTime"
     plan = _iso(f.get("scheduledoffblockTime" if direction == "departure" else "scheduledOnblockTime"))
     est = _iso(f.get("estimated" + side))
-    own = Leg(plan=plan, est=est if est != plan else None, fact=_iso(f.get("actual" + side)))
+    # Факт вылета — взлёт (actualTakeOffTime), а не уход со стоянки: «вылетел» = в воздухе.
+    fact = _iso(f.get("actualTakeOffTime" if direction == "departure" else "actualOnBlockTime"))
+    own = Leg(plan=plan, est=est if est != plan else None, fact=fact)
     departure, arrival = (own, Leg()) if direction == "departure" else (Leg(), own)
     return FlightSnapshot(
         flight=wanted, date=(own.plan or "")[:10], direction=direction,
