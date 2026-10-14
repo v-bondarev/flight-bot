@@ -113,3 +113,36 @@ def test_start_greets_as_gatey(monkeypatch):
     monkeypatch.setattr(bot, "OWNERS", frozenset({620773}))
     said = _feed("/start", 620773, "private", monkeypatch)
     assert said == [bot.GREETING] and said[0].startswith("👋 Привет! Я Гейти!")
+
+def test_subscribe_in_forum_topic_keeps_thread(monkeypatch):
+    import asyncio
+    from datetime import datetime
+
+    from aiogram.types import CallbackQuery, Chat, Message, User
+
+    from flight_bot import registry, storage
+
+    async def noop(self, *a, **kw):
+        return None
+    monkeypatch.setattr(CallbackQuery, "answer", noop)
+    monkeypatch.setattr(Message, "edit_text", noop)
+
+    async def none(*a, **kw):
+        return None
+    monkeypatch.setattr(registry, "fetch_for", none)
+    monkeypatch.setattr(registry, "scheduled", lambda *a: None)
+
+    def tap(**topic):
+        msg = Message(message_id=1, date=datetime.now(), text="Нашёл",
+                      chat=Chat(id=-100500, type="supergroup", is_forum=True), **topic)
+        cb = CallbackQuery(id="1", from_user=User(id=620773, is_bot=False, first_name="u"),
+                           chat_instance="x", message=msg,
+                           data="sub|EK770|2026-10-16|departure|aerodatabox.com")
+        asyncio.run(bot.on_subscribe(cb, conn))
+        return storage.active_all(conn)[0]["thread_id"]
+
+    conn = storage.connect(":memory:")
+    assert tap(message_thread_id=7, is_topic_message=True) == 7
+    assert tap() is None                                   # General: темы нет
+    # ответ на сообщение в обычной группе тоже несёт message_thread_id — это не тема
+    assert tap(message_thread_id=9) is None

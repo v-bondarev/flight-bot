@@ -10,11 +10,12 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import sqlite3
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
-from flight_bot import airports
+from flight_bot import airports, storage
 from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
@@ -36,6 +37,13 @@ SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource(), VkoSource(
 # подписок не ходит — только в поиск дат (search), с кэшем на SCHEDULE_TTL_SEC.
 SCHEDULE: Optional[FlightSource] = None
 SCHEDULE_TTL_SEC = 6 * 3600
+SCHEDULE_FAIL_TTL_SEC = 600     # лимит/сеть: не ждать таймаут на каждом поиске
+SCHEDULE_CACHE_MAX = 1000
+# Бюджет квоты: не больше SCHEDULE_BUDGET платных запросов за скользящие 31 день —
+# так любой месячный цикл RapidAPI укладывается в лимит, когда бы он ни сбрасывался.
+SCHEDULE_BUDGET = 60
+SCHEDULE_BUDGET_WINDOW_SEC = 31 * 86400
+_budget_conn: Optional[sqlite3.Connection] = None   # без базы платных запросов нет
 # Аэропорты наших табло: рейс сюда (а не отсюда) ищем на табло прилёта.
 BOARD_IATA = {"SVO", "DME", "VKO", "LED"}
 
@@ -76,7 +84,7 @@ async def cached_fetch(src: FlightSource, flight_no: str, date: Optional[str],
     return await asyncio.shield(task)
 
 
-def configure(settings: Settings) -> None:
+def configure(settings: Settings, conn: Optional[sqlite3.Connection] = None) -> None:
     """Источники с ключами — в конец списка: табло богаче, они первые.
     Табло, ходящие через Fetcher, получают ключ scrape.do как запасной транспорт."""
     from flight_bot import http
@@ -94,9 +102,10 @@ def configure(settings: Settings) -> None:
                                 cache_sec=settings.render_cache_sec)
     if settings.airlabs_api_key:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
-    global SCHEDULE
+    global SCHEDULE, SCHEDULE_BUDGET, _budget_conn
     if settings.aerodatabox_api_key:
         SCHEDULE = AeroDataBoxSource(settings.aerodatabox_api_key, proxy=settings.schedule_proxy_url)
+    SCHEDULE_BUDGET, _budget_conn = settings.aerodatabox_budget, conn
 
 
 # Маршрут по номеру у AirLabs: (origin, dest). Кэш на процесс — маршрут у
@@ -183,24 +192,71 @@ def upcoming(snaps: List[FlightSnapshot], today: Optional[date] = None) -> List[
     return list(seen.values())
 
 
-# Расписание по номеру: (время запроса, снимки на сегодня…+HORIZON_DAYS).
+# Расписание по номеру: (когда протухнет, снимки на сегодня…+HORIZON_DAYS).
+# Ошибка — [] на SCHEDULE_FAIL_TTL_SEC. Порядок ключей — порядок записи.
 _schedule_cache: Dict[str, Tuple[float, List[FlightSnapshot]]] = {}
+# Идущий запрос по номеру: одновременные поиски ждут его, а не платят дважды.
+_schedule_inflight: Dict[str, "asyncio.Task[List[FlightSnapshot]]"] = {}
+
+
+def _cached(flight_no: str) -> Optional[List[FlightSnapshot]]:
+    hit = _schedule_cache.get(flight_no)
+    return hit[1] if hit and time.monotonic() < hit[0] else None
+
+
+def _remember(flight_no: str, snaps: List[FlightSnapshot], ttl: float) -> None:
+    """Запись в кэш: протухшие выкидываем, сверх SCHEDULE_CACHE_MAX — самые старые."""
+    now = time.monotonic()
+    _schedule_cache.pop(flight_no, None)
+    for no in [no for no, (expires, _) in _schedule_cache.items() if expires <= now]:
+        del _schedule_cache[no]
+    while len(_schedule_cache) >= SCHEDULE_CACHE_MAX:
+        del _schedule_cache[next(iter(_schedule_cache))]
+    _schedule_cache[flight_no] = (now + ttl, snaps)
+
+
+def _spend_budget() -> bool:
+    """Попытку списываем до запроса: тарифицирует ли RapidAPI ошибки — не знаем.
+    Не смогли списать (нет базы, диск, блокировка) — не платим."""
+    if _budget_conn is None:
+        return False
+    try:
+        return storage.spend_schedule_call(_budget_conn, SCHEDULE_BUDGET,
+                                           SCHEDULE_BUDGET_WINDOW_SEC)
+    except sqlite3.Error:
+        log.exception("бюджет расписания не списать — без платного запроса")
+        return False
+
+
+async def _load(flight_no: str) -> List[FlightSnapshot]:
+    if not _spend_budget():
+        log.warning("нет бюджета расписания (%d за 31 день): %s только по табло",
+                    SCHEDULE_BUDGET, flight_no)
+        return []
+    try:
+        snaps = [_fill_places(s) for s in await SCHEDULE.fetch(flight_no)]
+    except Exception:  # noqa: BLE001 — лимит/сеть: остаёмся с табло
+        log.warning("расписание %s недоступно", flight_no, exc_info=True)
+        snaps, ttl = [], SCHEDULE_FAIL_TTL_SEC
+    else:
+        ttl = SCHEDULE_TTL_SEC
+    _remember(flight_no, snaps, ttl)
+    return snaps
 
 
 async def schedule(flight_no: str) -> List[FlightSnapshot]:
     """Даты рейса из расписания; ошибка расписания не ломает поиск по табло."""
     if SCHEDULE is None:
         return []
-    hit = _schedule_cache.get(flight_no)
-    if hit and time.monotonic() - hit[0] < SCHEDULE_TTL_SEC:
-        return hit[1]
-    try:
-        snaps = [_fill_places(s) for s in await SCHEDULE.fetch(flight_no)]
-    except Exception:  # noqa: BLE001 — лимит/сеть: остаёмся с табло
-        log.warning("расписание %s недоступно", flight_no, exc_info=True)
-        return []
-    _schedule_cache[flight_no] = (time.monotonic(), snaps)
-    return snaps
+    snaps = _cached(flight_no)
+    if snaps is not None:
+        return snaps
+    task = _schedule_inflight.get(flight_no)
+    if task is None:
+        task = _schedule_inflight[flight_no] = asyncio.ensure_future(_load(flight_no))
+        # Снаружи, а не finally в _load: отменённая до старта задача finally не выполнит.
+        task.add_done_callback(lambda _: _schedule_inflight.pop(flight_no, None))
+    return await asyncio.shield(task)   # отмена одного ждущего не отменяет общий запрос
 
 
 def _board_side(s: FlightSnapshot) -> FlightSnapshot:
@@ -217,8 +273,7 @@ def scheduled(flight_no: str, date: str) -> Optional[FlightSnapshot]:
     """Снимок из уже взятого при поиске расписания — для карточки при подписке.
     Нового платного запроса не делает; в опрос не идёт: застывший план выдал
     бы себя за живой статус и сбил бы диффер на стыке с табло."""
-    hit = _schedule_cache.get(flight_no)
-    return next((s for s in map(_board_side, hit[1]) if s.date == date), None) if hit else None
+    return next((s for s in map(_board_side, _cached(flight_no) or []) if s.date == date), None)
 
 
 async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSnapshot]:

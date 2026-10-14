@@ -6,7 +6,8 @@
   • /list — активные подписки с кнопкой «Отписаться».
 
 В группе Telegram (режим приватности) бот видит только команды, поэтому там
-номер шлют командой `/track EK770`; обновления идут в тот чат, где подписались.
+номер шлют командой `/track EK770`; обновления идут в тот чат (и тему форума),
+где подписались.
 OWNER_IDS — чьи сообщения и кнопки бот принимает; остальных молча игнорирует.
 
 conn прокидывается через workflow-data диспетчера (см. main.py), поэтому
@@ -133,7 +134,10 @@ async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     parts = cb.data.split("|")
     flight, date, direction = parts[1], parts[2], parts[3]
     source = parts[4] if len(parts) > 4 else ""
-    storage.add(conn, cb.message.chat.id, flight, date, direction, source)
+    # Тема форума — только у сообщения в теме; у ответа в обычной группе
+    # message_thread_id тоже есть, но это не тема.
+    thread_id = cb.message.message_thread_id if cb.message.is_topic_message else None
+    storage.add(conn, cb.message.chat.id, flight, date, direction, source, thread_id)
     snap = await registry.fetch_for(flight, date, direction, prefer=source)
     planned = None if snap else registry.scheduled(flight, date)
     if snap:
