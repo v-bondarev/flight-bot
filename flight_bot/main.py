@@ -26,6 +26,9 @@ async def main() -> None:
     if not settings.bot_token:
         raise SystemExit("BOT_TOKEN не задан (см. .env.example)")
     registry.configure(settings)
+    handlers.OWNERS = settings.owner_ids
+    if not handlers.OWNERS:
+        log.warning("OWNER_IDS пуст — бот принимает команды от всех")
 
     conn = storage.connect(settings.db_path)
     tg = Bot(settings.bot_token,

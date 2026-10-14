@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import FrozenSet
 
 
 @dataclass(frozen=True)
@@ -14,10 +15,12 @@ class Settings:
     scrapedo_api_key: str       # для источников с антиботом (DME/Pulkovo); пусто — не используем
     yandex_rasp_api_key: str    # реестр «номер → аэропорт» вне Москвы; пусто — не используем
     airlabs_api_key: str        # статус/маршрут по номеру вне наших табло; пусто — не используем
+    aerodatabox_api_key: str    # расписание по номеру на 5 дней вперёд (RapidAPI); пусто — не используем
     ru_proxy_url: str           # свой RU-выход для табло (socks5://127.0.0.1:1080 SSH-туннель до RU-хоста); пусто — сразу scrape.do
     scrapedo_concurrency: int   # одновременных запросов к scrape.do (кредиты платные)
     render_url: str             # резервный рендер VKO через туннель; основной путь — HTTP API
     render_cache_sec: int       # TTL кэша VKO HTTP-поиска и резервного HTML-рендера
+    owner_ids: FrozenSet[int]   # Telegram user id, чьи команды и кнопки бот принимает; пусто — все
 
 
 def load_env(path: str = ".env") -> None:
@@ -39,6 +42,13 @@ def load_env(path: str = ".env") -> None:
                 os.environ[key] = val.strip().strip('"').strip("'")
 
 
+def _owner_ids(raw: str) -> FrozenSet[int]:
+    try:
+        return frozenset(int(x) for x in raw.split(",") if x.strip())
+    except ValueError:
+        raise SystemExit(f"OWNER_IDS: ожидаются числовые Telegram id через запятую, а не {raw!r}")
+
+
 def load() -> Settings:
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", ""),
@@ -48,8 +58,10 @@ def load() -> Settings:
         scrapedo_api_key=os.getenv("SCRAPEDO_API_KEY", ""),
         yandex_rasp_api_key=os.getenv("YANDEX_RASP_API_KEY", ""),
         airlabs_api_key=os.getenv("AIRLABS_API_KEY", ""),
+        aerodatabox_api_key=os.getenv("AERODATABOX_API_KEY", ""),
         ru_proxy_url=os.getenv("RU_PROXY_URL", ""),
         scrapedo_concurrency=int(os.getenv("SCRAPEDO_CONCURRENCY", "2")),
         render_url=os.getenv("RENDER_URL", ""),
         render_cache_sec=int(os.getenv("RENDER_CACHE_SEC", "75")),
+        owner_ids=_owner_ids(os.getenv("OWNER_IDS", "")),
     )

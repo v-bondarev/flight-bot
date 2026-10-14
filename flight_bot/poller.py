@@ -5,7 +5,8 @@
 Цикл тикает раз в минуту и берёт только те подписки, чей `next_at` наступил.
 
 Подписка снимается сама: после прилёта, при отмене и через сутки после даты
-рейса (если он так и не появился на табло).
+рейса (если он так и не появился на табло). Рейс, которого на табло ещё нет,
+до 00:00 МСК накануне даты не опрашиваем: табло держат только сегодня/завтра.
 
 send — async callable(chat_id, text): развязывает поллер с aiogram и делает
 его тестируемым без сети; `now` прокидывается по той же причине.
@@ -56,6 +57,12 @@ def interval_for(snap: Optional[FlightSnapshot], now: datetime, near: int) -> in
     return near
 
 
+def wake_at(date: str, epoch: int, near: int) -> int:
+    """Когда снова искать рейс, которого нет на табло: не раньше суток до даты."""
+    day_before = datetime.fromisoformat(date).replace(tzinfo=MSK) - timedelta(days=1)
+    return max(epoch + near, int(day_before.timestamp()))
+
+
 def expired(date: str, now: datetime) -> bool:
     day = datetime.fromisoformat(date).replace(tzinfo=MSK)
     return now >= day + timedelta(days=1 + EXPIRE_DAYS)
@@ -87,7 +94,7 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
         sub_id = row["id"]
         if curr is None:
             # рейса пока нет на табло — не ошибка, ждём следующего круга
-            storage.set_next(conn, sub_id, epoch + near)
+            storage.set_next(conn, sub_id, wake_at(row["date"], epoch, near))
             continue
         prev = storage.get_last(conn, sub_id)
         storage.set_last(conn, sub_id, curr)

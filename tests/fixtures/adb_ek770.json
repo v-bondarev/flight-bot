@@ -1,0 +1,247 @@
+[
+ {
+  "greatCircleDistance": {
+   "meter": 7619764.92,
+   "km": 7619.76,
+   "mile": 4734.7,
+   "nm": 4114.34,
+   "feet": 24999228.75
+  },
+  "departure": {
+   "airport": {
+    "icao": "OMDB",
+    "iata": "DXB",
+    "name": "Dubai",
+    "shortName": "Dubai",
+    "municipalityName": "Dubai",
+    "location": {
+     "lat": 25.252798,
+     "lon": 55.3644
+    },
+    "countryCode": "AE",
+    "timeZone": "Asia/Dubai"
+   },
+   "scheduledTime": {
+    "utc": "2026-10-14 05:10Z",
+    "local": "2026-10-14 09:10+04:00"
+   },
+   "revisedTime": {
+    "utc": "2026-10-14 05:10Z",
+    "local": "2026-10-14 09:10+04:00"
+   },
+   "runwayTime": {
+    "utc": "2026-10-14 05:41Z",
+    "local": "2026-10-14 09:41+04:00"
+   },
+   "terminal": "3",
+   "gate": "A6b",
+   "runway": "30R",
+   "quality": [
+    "Basic",
+    "Live"
+   ]
+  },
+  "arrival": {
+   "airport": {
+    "icao": "FACT",
+    "iata": "CPT",
+    "name": "Cape Town",
+    "shortName": "Cape Town",
+    "municipalityName": "Cape Town",
+    "location": {
+     "lat": -33.9648,
+     "lon": 18.6017
+    },
+    "countryCode": "ZA",
+    "timeZone": "Africa/Johannesburg"
+   },
+   "scheduledTime": {
+    "utc": "2026-10-14 14:40Z",
+    "local": "2026-10-14 16:40+02:00"
+   },
+   "revisedTime": {
+    "utc": "2026-10-14 14:40Z",
+    "local": "2026-10-14 16:40+02:00"
+   },
+   "predictedTime": {
+    "utc": "2026-10-14 15:09Z",
+    "local": "2026-10-14 17:09+02:00"
+   },
+   "baggageBelt": "2",
+   "quality": [
+    "Basic",
+    "Live"
+   ]
+  },
+  "lastUpdatedUtc": "2026-10-14 06:25Z",
+  "number": "EK 770",
+  "callSign": "UAE23C",
+  "status": "EnRoute",
+  "codeshareStatus": "IsOperator",
+  "isCargo": false,
+  "aircraft": {
+   "reg": "A6-EQO",
+   "modeS": "8964A7",
+   "model": "Boeing 777-300ER"
+  },
+  "airline": {
+   "name": "Emirates",
+   "iata": "EK",
+   "icao": "UAE"
+  }
+ },
+ {
+  "greatCircleDistance": {
+   "meter": 7619764.92,
+   "km": 7619.76,
+   "mile": 4734.7,
+   "nm": 4114.34,
+   "feet": 24999228.75
+  },
+  "departure": {
+   "airport": {
+    "icao": "OMDB",
+    "iata": "DXB",
+    "name": "Dubai",
+    "shortName": "Dubai",
+    "municipalityName": "Dubai",
+    "location": {
+     "lat": 25.252798,
+     "lon": 55.3644
+    },
+    "countryCode": "AE",
+    "timeZone": "Asia/Dubai"
+   },
+   "scheduledTime": {
+    "utc": "2026-10-15 05:10Z",
+    "local": "2026-10-15 09:10+04:00"
+   },
+   "revisedTime": {
+    "utc": "2026-10-15 05:10Z",
+    "local": "2026-10-15 09:10+04:00"
+   },
+   "terminal": "3",
+   "gate": "B32",
+   "quality": [
+    "Basic",
+    "Live"
+   ]
+  },
+  "arrival": {
+   "airport": {
+    "icao": "FACT",
+    "iata": "CPT",
+    "name": "Cape Town",
+    "shortName": "Cape Town",
+    "municipalityName": "Cape Town",
+    "location": {
+     "lat": -33.9648,
+     "lon": 18.6017
+    },
+    "countryCode": "ZA",
+    "timeZone": "Africa/Johannesburg"
+   },
+   "scheduledTime": {
+    "utc": "2026-10-15 14:40Z",
+    "local": "2026-10-15 16:40+02:00"
+   },
+   "revisedTime": {
+    "utc": "2026-10-15 14:40Z",
+    "local": "2026-10-15 16:40+02:00"
+   },
+   "predictedTime": {
+    "utc": "2026-10-15 14:38Z",
+    "local": "2026-10-15 16:38+02:00"
+   },
+   "baggageBelt": "2",
+   "quality": [
+    "Basic",
+    "Live"
+   ]
+  },
+  "lastUpdatedUtc": "2026-10-14 02:28Z",
+  "number": "EK 770",
+  "status": "Expected",
+  "codeshareStatus": "IsOperator",
+  "isCargo": false,
+  "aircraft": {
+   "model": "Boeing 777-300ER"
+  },
+  "airline": {
+   "name": "Emirates",
+   "iata": "EK",
+   "icao": "UAE"
+  }
+ },
+ {
+  "greatCircleDistance": {
+   "meter": 7619764.92,
+   "km": 7619.76,
+   "mile": 4734.7,
+   "nm": 4114.34,
+   "feet": 24999228.75
+  },
+  "departure": {
+   "airport": {
+    "icao": "OMDB",
+    "iata": "DXB",
+    "name": "Dubai",
+    "shortName": "Dubai",
+    "municipalityName": "Dubai",
+    "location": {
+     "lat": 25.252798,
+     "lon": 55.3644
+    },
+    "countryCode": "AE",
+    "timeZone": "Asia/Dubai"
+   },
+   "scheduledTime": {
+    "utc": "2026-10-16 05:10Z",
+    "local": "2026-10-16 09:10+04:00"
+   },
+   "terminal": "3",
+   "quality": [
+    "Basic"
+   ]
+  },
+  "arrival": {
+   "airport": {
+    "icao": "FACT",
+    "iata": "CPT",
+    "name": "Cape Town",
+    "shortName": "Cape Town",
+    "municipalityName": "Cape Town",
+    "location": {
+     "lat": -33.9648,
+     "lon": 18.6017
+    },
+    "countryCode": "ZA",
+    "timeZone": "Africa/Johannesburg"
+   },
+   "scheduledTime": {
+    "utc": "2026-10-16 14:40Z",
+    "local": "2026-10-16 16:40+02:00"
+   },
+   "predictedTime": {
+    "utc": "2026-10-16 14:38Z",
+    "local": "2026-10-16 16:38+02:00"
+   },
+   "quality": [
+    "Basic"
+   ]
+  },
+  "lastUpdatedUtc": "2026-05-22 02:39Z",
+  "number": "EK 770",
+  "status": "Expected",
+  "codeshareStatus": "Unknown",
+  "isCargo": false,
+  "aircraft": {
+   "model": "Boeing 777-300ER"
+  },
+  "airline": {
+   "name": "Emirates",
+   "iata": "EK",
+   "icao": "UAE"
+  }
+ }
+]
