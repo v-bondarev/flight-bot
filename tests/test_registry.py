@@ -3,9 +3,9 @@
 import asyncio
 import dataclasses
 import types
+from datetime import date
 
 import pytest
-from datetime import date
 
 from flight_bot import registry, storage
 from flight_bot.models import FlightSnapshot, Leg

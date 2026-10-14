@@ -23,8 +23,7 @@ from typing import Dict, FrozenSet, Optional
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import (CallbackQuery, InlineKeyboardButton,
-                           InlineKeyboardMarkup, Message)
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from flight_bot import registry, storage
 from flight_bot.models import snap_from_dict

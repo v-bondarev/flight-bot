@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from flight_bot.http import Fetcher

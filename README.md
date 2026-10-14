@@ -183,8 +183,8 @@ GF013 · Gulf Air · Airbus A321neo
 ## Разработка
 
 ```bash
-pip install -r requirements.txt pytest
-pytest
+pip install -r requirements.txt pytest ruff
+ruff check . && pytest
 ```
 
 CI — GitHub Actions (`.github/workflows/tests.yml`): pytest на Python 3.12 на каждый

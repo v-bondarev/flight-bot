@@ -2,7 +2,6 @@ import asyncio
 import json
 from pathlib import Path
 
-import httpx
 import pytest
 
 from flight_bot.sources import vko
@@ -99,6 +98,7 @@ def test_failure_without_renderer_propagates():
 
 def test_registry_configures_vko_http_proxy_and_cache(monkeypatch):
     from dataclasses import replace
+
     from flight_bot import config, registry
     src = vko.VkoSource()
     monkeypatch.setattr(registry, 'SOURCES', [src])

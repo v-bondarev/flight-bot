@@ -102,7 +102,7 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
     # Опрашиваем параллельно: табло через scrape.do отвечает десятки секунд,
     # по очереди одна медленная подписка тормозила бы все остальные.
     snaps = await asyncio.gather(*(_fetch(conn, r) for r in rows))
-    for row, curr in zip(rows, snaps):
+    for row, curr in zip(rows, snaps, strict=True):
         try:
             await _handle(conn, send, row, curr, now, epoch, near)
         except Exception:  # noqa: BLE001 — одна подписка не должна ронять весь круг

@@ -76,7 +76,8 @@ def test_status_phase_change_only_when_nothing_else_and_no_digits():
     # статус с временем (SVO) — молчим
     assert diff_snapshots(_snap(status="Регистрация в 18:25"), _snap(status="Регистрация в 18:30")) == []
     # есть структурное изменение — статус не дублируем
-    assert diff_snapshots(_snap(status="Ожидается", gate="1"), _snap(status="Идёт посадка", gate="2")) == ["🚪 Выход: 1 → 2"]
+    assert diff_snapshots(_snap(status="Ожидается", gate="1"),
+                          _snap(status="Идёт посадка", gate="2")) == ["🚪 Выход: 1 → 2"]
 
 
 def test_chronology_before_tiles():
@@ -101,8 +102,8 @@ def test_naive_time_outside_moscow_is_local():
 
 
 def test_shift_push_for_foreign_airport_shows_msk():
-    from flight_bot.models import FlightSnapshot, Leg
     from flight_bot.diff import diff_snapshots
+    from flight_bot.models import FlightSnapshot, Leg
     base = dict(flight="EK770", date="2026-10-16", direction="departure", origin_iata="DXB",
                 dest_iata="CPT", status="")
     a = FlightSnapshot(**base, departure=Leg(plan="2026-10-16T09:10:00+04:00"))

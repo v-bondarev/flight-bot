@@ -17,7 +17,8 @@ class Settings:
     aerodatabox_api_key: str    # расписание по номеру на 5 дней вперёд (RapidAPI); пусто — не используем
     schedule_proxy_url: str     # выход для AeroDataBox (socks5://127.0.0.1:1081, туннель до DK); пусто — напрямую
     aerodatabox_budget: int     # платных запросов расписания за скользящие 31 день (квота 400/6 = 66)
-    ru_proxy_url: str           # свой RU-выход для табло (socks5://127.0.0.1:1080 SSH-туннель до RU-хоста); пусто — сразу scrape.do
+    ru_proxy_url: str           # свой RU-выход для табло (socks5://127.0.0.1:1080, SSH-туннель до RU-хоста);
+                                # пусто — сразу scrape.do
     scrapedo_concurrency: int   # одновременных запросов к scrape.do (кредиты платные)
     render_url: str             # резервный рендер VKO через туннель; основной путь — HTTP API
     render_cache_sec: int       # TTL кэша VKO HTTP-поиска и резервного HTML-рендера
@@ -49,7 +50,7 @@ def _owner_ids(raw: str) -> FrozenSet[int]:
     try:
         return frozenset(int(x) for x in raw.split(",") if x.strip())
     except ValueError:
-        raise SystemExit(f"OWNER_IDS: ожидаются числовые Telegram id через запятую, а не {raw!r}")
+        raise SystemExit(f"OWNER_IDS: ожидаются числовые Telegram id через запятую, а не {raw!r}") from None
 
 
 def _greet_names(raw: str) -> Dict[str, str]:
@@ -70,7 +71,7 @@ def _date(name: str) -> Optional[date]:
     try:
         return date.fromisoformat(raw) if raw else None
     except ValueError:
-        raise SystemExit(f"{name}: ожидается дата ГГГГ-ММ-ДД, а не {raw!r}")
+        raise SystemExit(f"{name}: ожидается дата ГГГГ-ММ-ДД, а не {raw!r}") from None
 
 
 def load() -> Settings:

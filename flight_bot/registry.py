@@ -21,8 +21,8 @@ from flight_bot.http import describe
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
 from flight_bot.sources.airlabs import AirlabsSource
-from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.bah import BahSource
+from flight_bot.sources.base import AirportResolver, FlightSource
 from flight_bot.sources.dme import DmeSource
 from flight_bot.sources.dxb import DxbSource
 from flight_bot.sources.led import LedSource
@@ -196,7 +196,7 @@ async def probe(flight_no: str, date: Optional[str] = None) -> Found:
     for tier, dirs in ((boards, DIRECTIONS), (keyed, DIRECTIONS[:1])):
         pairs = [(src, d) for src in tier for d in dirs]
         found = await asyncio.gather(*(_ask(src, flight_no, date, d) for src, d in pairs))
-        down |= {src.name for (src, _), snaps in zip(pairs, found) if snaps is None}
+        down |= {src.name for (src, _), snaps in zip(pairs, found, strict=True) if snaps is None}
         for snaps in found:
             if snaps:
                 return Found(await enrich_iata(snaps), down)
