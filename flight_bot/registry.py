@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 from flight_bot import airports, health, storage
 from flight_bot.config import Settings
-from flight_bot.http import describe
+from flight_bot.http import SharedFetch, describe
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
 from flight_bot.sources.airlabs import AirlabsSource
@@ -69,39 +69,24 @@ PROBE_TIMEOUT_SEC = 15.0
 # Ответ источника на (рейс, дата, направление) общий для всех подписок и поиска:
 # 10 подписок на один рейс = один запрос за цикл. Одновременные — склеиваем.
 FETCH_TTL_SEC = 60.0
-_clock = time.monotonic
-_fetch_cache: Dict[tuple, Tuple[float, List[FlightSnapshot]]] = {}
-_fetch_inflight: Dict[tuple, "asyncio.Future"] = {}
+_fetches = SharedFetch(FETCH_TTL_SEC)
 
 
 async def cached_fetch(src: FlightSource, flight_no: str, date: Optional[str],
                        direction: str) -> List[FlightSnapshot]:
-    """src.fetch с кэшем FETCH_TTL_SEC и склейкой одновременных запросов.
-    Ошибку не запоминаем: следующий вызов спросит источник снова."""
-    key = (src.name, flight_no, date, direction)
-    hit = _fetch_cache.get(key)
-    if hit and _clock() - hit[0] < FETCH_TTL_SEC:
-        return hit[1]
-    task = _fetch_inflight.get(key)
-    if task is None:
-        task = asyncio.ensure_future(src.fetch(flight_no, date, direction))
-        _fetch_inflight[key] = task
+    """src.fetch с кэшем FETCH_TTL_SEC и склейкой одновременных запросов (SharedFetch:
+    ошибку не запоминает, таймаут поиска не отменяет запрос, которого ждёт и опрос).
+    Исход каждого реального запроса уходит в мониторинг источников."""
 
-        def done(t: "asyncio.Future") -> None:
-            _fetch_inflight.pop(key, None)
-            if t.cancelled():
-                return
-            if t.exception() is not None:
-                health.HEALTH.fail(src.name, t.exception())
-                return
-            health.HEALTH.ok(src.name)
-            now = _clock()
-            for k in [k for k, (ts, _) in _fetch_cache.items() if now - ts >= FETCH_TTL_SEC]:
-                del _fetch_cache[k]
-            _fetch_cache[key] = (now, t.result())
-        task.add_done_callback(done)
-    # shield: таймаут поиска не должен отменить запрос, которого ждёт и опрос.
-    return await asyncio.shield(task)
+    async def load() -> List[FlightSnapshot]:
+        try:
+            snaps = await src.fetch(flight_no, date, direction)
+        except Exception as exc:
+            health.HEALTH.fail(src.name, exc)
+            raise
+        health.HEALTH.ok(src.name)
+        return snaps
+    return await _fetches.get((src.name, flight_no, date, direction), load)
 
 
 def configure(settings: Settings, conn: Optional[sqlite3.Connection] = None) -> None:

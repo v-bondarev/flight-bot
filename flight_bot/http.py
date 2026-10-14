@@ -123,10 +123,7 @@ class Renderer:
         # Рендер дорогой (15–20 с), а табло — одна страница на все подписки
         # аэропорта: держим результат cache_sec и склеиваем одновременные
         # одинаковые запросы в один.
-        self.cache_sec = cache_sec
-        self._clock = clock
-        self._cache: Dict[tuple, tuple] = {}          # key → (ts, html)
-        self._inflight: Dict[tuple, asyncio.Task] = {}
+        self._shared = SharedFetch(cache_sec, clock)
 
     @property
     def enabled(self) -> bool:
@@ -146,21 +143,7 @@ class Renderer:
             params["selector"] = selector
         if click:
             params["click"] = click
-        key = (url, click)
-        hit = self._cache.get(key)
-        if hit and self._clock() - hit[0] < self.cache_sec:
-            return hit[1]
-        task = self._inflight.get(key)
-        if task is None:
-            task = asyncio.ensure_future(self._fetch(params))
-            self._inflight[key] = task
-            try:
-                html = await task
-                self._cache[key] = (self._clock(), html)
-                return html
-            finally:
-                self._inflight.pop(key, None)
-        return await task
+        return await self._shared.get((url, click), lambda: self._fetch(params))
 
 
 class Fetcher:

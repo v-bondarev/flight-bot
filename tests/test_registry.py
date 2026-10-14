@@ -250,7 +250,7 @@ class _Board:
 
 def test_probe_asks_boards_in_parallel_keeps_priority_and_skips_slow(monkeypatch):
     import time as _time
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
     monkeypatch.setattr(registry, "PROBE_TIMEOUT_SEC", 0.5)
     slow = _Board("slow", [_snap("2026-10-14", source="slow")], delay=5)
     first = _Board("first", [_snap("2026-10-14", source="first")], delay=0.2)
@@ -263,7 +263,7 @@ def test_probe_asks_boards_in_parallel_keeps_priority_and_skips_slow(monkeypatch
 
 
 def test_probe_asks_airlabs_only_when_boards_are_empty(monkeypatch):
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
     board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")])
     from flight_bot.sources.airlabs import AirlabsSource
 
@@ -276,7 +276,7 @@ def test_probe_asks_airlabs_only_when_boards_are_empty(monkeypatch):
 
 
 def test_ten_concurrent_polls_of_one_flight_make_one_request(monkeypatch):
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
     board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")], delay=0.05)
     monkeypatch.setattr(registry, "SOURCES", [board])
 
@@ -291,8 +291,8 @@ def test_ten_concurrent_polls_of_one_flight_make_one_request(monkeypatch):
 
 def test_fetch_cache_expires_and_errors_are_not_cached(monkeypatch):
     now = [1000.0]
-    monkeypatch.setattr(registry, "_fetch_cache", {})
-    monkeypatch.setattr(registry, "_clock", lambda: now[0])
+    monkeypatch.setattr(registry, "_fetches",
+                        registry.SharedFetch(registry.FETCH_TTL_SEC, clock=lambda: now[0]))
     board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")])
     monkeypatch.setattr(registry, "SOURCES", [board])
     asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
@@ -312,7 +312,7 @@ def test_fetch_cache_expires_and_errors_are_not_cached(monkeypatch):
 
 
 def test_search_timeout_does_not_cancel_shared_request_for_polling(monkeypatch):
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
     monkeypatch.setattr(registry, "PROBE_TIMEOUT_SEC", 0.05)
     board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")], delay=0.2)
     monkeypatch.setattr(registry, "SOURCES", [board])
@@ -328,7 +328,7 @@ def test_search_timeout_does_not_cancel_shared_request_for_polling(monkeypatch):
 
 def test_fetch_for_sticks_to_the_record_key_when_a_date_has_two(monkeypatch):
     import dataclasses as dc
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
     a = _snap("2026-10-15", source="dubaiairports.ae")
     first, second = dc.replace(a, key="96"), dc.replace(a, key="97")
     monkeypatch.setattr(registry, "SOURCES", [_Board("dubaiairports.ae", [first, second])])
@@ -345,7 +345,7 @@ def test_source_errors_feed_health_and_empty_answer_is_success(monkeypatch):
         def fail(self, name, exc): seen.append(("fail", name))
         def ok(self, name): seen.append(("ok", name))
     monkeypatch.setattr(health, "HEALTH", _H())
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
 
     class _Broken(_Board):
         async def fetch(self, *a, **kw):
@@ -356,7 +356,7 @@ def test_source_errors_feed_health_and_empty_answer_is_success(monkeypatch):
 
 
 def test_probe_asks_airlabs_once_not_per_direction(monkeypatch):
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
     from flight_bot.sources.airlabs import AirlabsSource
 
     class _Airlabs(_Board, AirlabsSource):
@@ -369,7 +369,7 @@ def test_probe_asks_airlabs_once_not_per_direction(monkeypatch):
 
 def test_search_reports_sources_that_failed(monkeypatch):
     """«Не нашёл» и «табло лежат» — разные ответы пользователю."""
-    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_fetches", registry.SharedFetch(registry.FETCH_TTL_SEC))
     monkeypatch.setattr(registry, "SCHEDULE", None)
 
     class _Broken(_Board):
