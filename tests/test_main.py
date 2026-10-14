@@ -61,6 +61,11 @@ def test_migrated_group_moves_subs_and_resends():
 
 def test_push_goes_to_topic_and_falls_back_to_general():
     conn, tg, send = _setup(TelegramBadRequest(None, "Bad Request: message thread not found"))
+    storage.add(conn, -1, "SU7", "2026-09-06", thread_id=7)
+    storage.add(conn, -1, "SU8", "2026-09-06", thread_id=8)
     asyncio.run(send(-1, "x", 7))
     assert tg.sent == [(-1, 7), (-1, None)]
-    assert len(storage.list_for_chat(conn, -1)) == 2
+    assert len(storage.list_for_chat(conn, -1)) == 4
+    # тему забыли: следующие пуши сразу в General, чужую тему не тронули
+    threads = {r["flight"]: r["thread_id"] for r in storage.list_for_chat(conn, -1)}
+    assert threads["SU7"] is None and threads["SU8"] == 8

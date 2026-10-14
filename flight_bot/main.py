@@ -41,6 +41,7 @@ def make_send(tg: Bot, conn: sqlite3.Connection) -> poller.Send:
             if "chat not found" in e.message:
                 _gone(chat_id, e)
             elif thread_id is not None and "thread not found" in e.message:
+                storage.clear_thread(conn, chat_id, thread_id)
                 await send(chat_id, text)
             else:
                 log.exception("не отправилось в чат %s", chat_id)

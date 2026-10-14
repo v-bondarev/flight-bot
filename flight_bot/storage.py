@@ -142,6 +142,16 @@ def migrate_chat(conn: sqlite3.Connection, old_chat_id: int, new_chat_id: int) -
     return moved + revived
 
 
+def clear_thread(conn: sqlite3.Connection, chat_id: int, thread_id: int) -> int:
+    """Тему форума удалили — её подписки дальше шлют в General."""
+    cur = conn.execute(
+        "UPDATE subscriptions SET thread_id=NULL WHERE chat_id=? AND thread_id=?",
+        (chat_id, thread_id),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 def get_last(conn: sqlite3.Connection, sub_id: int) -> Optional[FlightSnapshot]:
     row = conn.execute(
         "SELECT last_json FROM subscriptions WHERE id=?", (sub_id,)
