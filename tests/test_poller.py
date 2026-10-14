@@ -112,7 +112,20 @@ def test_expires_a_day_after_flight_date(monkeypatch):
     assert len(storage.active_all(conn)) == 1
     _run(conn, send, datetime(2026, 9, 8, 0, 1, tzinfo=MSK))      # сутки прошли
     assert storage.active_all(conn) == []
-    assert send.msgs == []
+    assert len(send.msgs) == 1 and send.msgs[0][0] == 42          # сняли — сказали
+    assert "SU2128" in send.msgs[0][1] and "не появился" in send.msgs[0][1]
+
+
+def test_expiry_of_seen_flight_says_tracking_stopped(monkeypatch):
+    conn = storage.connect(":memory:")
+    sid = storage.add(conn, -1001, "SU2128", "2026-09-06", thread_id=7)
+    storage.set_last(conn, sid, _snap(departure=Leg(plan=DEP, fact=DEP)))   # вылетел, прилёта так и не было
+    send = _Sends()
+    _fixed(None, monkeypatch)
+    _run(conn, send, datetime(2026, 9, 8, 0, 1, tzinfo=MSK))
+    assert storage.active_all(conn) == []
+    assert len(send.msgs) == 1 and "не появился" not in send.msgs[0][1]
+    assert "слежение снято" in send.msgs[0][1].lower() and send.threads == [7]
 
 
 def test_far_future_unseen_flight_sleeps_until_day_before(monkeypatch):

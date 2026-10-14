@@ -5,7 +5,8 @@
 Цикл тикает раз в минуту и берёт только те подписки, чей `next_at` наступил.
 
 Подписка снимается сама: после прилёта, при отмене и через сутки после даты
-рейса (если он так и не появился на табло). Рейс, которого на табло ещё нет,
+рейса — об этом последнем случае пользователю приходит пуш, молча снятая
+подписка выглядит как потерянная. Рейс, которого на табло ещё нет,
 до 00:00 МСК накануне даты не опрашиваем: табло держат только сегодня/завтра.
 
 send — async callable(chat_id, text, thread_id): развязывает поллер с aiogram и делает
@@ -70,6 +71,13 @@ def expired(date: str, now: datetime) -> bool:
     return now >= day + timedelta(days=1 + EXPIRE_DAYS)
 
 
+def expiry_message(row: sqlite3.Row, seen: bool) -> str:
+    when = f"{row['date'][8:10]}.{row['date'][5:7]}"
+    why = ("прошли сутки после даты рейса, прилёта табло не показало" if seen
+           else "на табло так и не появился")
+    return f"🔕 {row['flight']} {when} — {why}. Слежение снято."
+
+
 async def _fetch(conn: sqlite3.Connection, row: sqlite3.Row) -> Optional[FlightSnapshot]:
     try:
         last = storage.get_last(conn, row["id"])
@@ -88,6 +96,7 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
     for row in storage.due(conn, epoch):
         if expired(row["date"], now):
             storage.deactivate(conn, row["id"])
+            await send(row["chat_id"], expiry_message(row, bool(row["last_json"])), row["thread_id"])
         else:
             rows.append(row)
     # Опрашиваем параллельно: табло через scrape.do отвечает десятки секунд,
