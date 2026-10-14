@@ -101,3 +101,9 @@ def test_countdown_without_offset_is_not_guessed():
     s = _su5822(departure=Leg(plan="2026-08-16T23:25:00"))
     assert countdown(s, NOW) == ""
     assert "SU5822" in status_card(s, NOW)
+
+
+def test_zone_shown_instead_of_terminal_when_no_terminal():
+    s = _su5822(terminal="", zone="E")
+    card = status_card(s, NOW)
+    assert "🏢 Зона вылета E" in card and "Терминал" not in card

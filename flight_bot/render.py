@@ -142,7 +142,8 @@ def _tiles_departure(s: FlightSnapshot) -> List[str]:
     else:
         gate_note = "назначат ближе к вылету"
 
-    term = ["Терминал " + (_e(s.terminal) or "—")]
+    term = ["Зона вылета " + _e(s.zone) if s.zone and not s.terminal
+            else "Терминал " + (_e(s.terminal) or "—")]
     if s.gate_terminal and s.gate_terminal != s.terminal:
         term.append("выход в терминале " + _e(s.gate_terminal))
     if s.baggage_belt:
@@ -164,7 +165,8 @@ def _tiles_arrival(s: FlightSnapshot) -> List[str]:
     return [
         f"🧳 Лента багажа {_e(belt) or '—'} · {belt_note}",
         gate,
-        "🏢 Терминал " + (_e(s.terminal) or "—"),
+        "🏢 Зона прилёта " + _e(s.zone) if s.zone and not s.terminal
+        else "🏢 Терминал " + (_e(s.terminal) or "—"),
     ]
 
 

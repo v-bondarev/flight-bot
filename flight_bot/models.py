@@ -60,6 +60,7 @@ class FlightSnapshot:
     gate: str = ""
     gate_prev: str = ""    # прошлый выход, если сменили — самое дорогое для пассажира
     gate_terminal: str = ""  # выход бывает в другом терминале, чем стойки
+    zone: str = ""         # зона вылета/прилёта там, где терминал один (DME: «E»)
     baggage_belt: str = ""
     source: str = ""       # "svo.aero", "dme.ru"…
     key: str = ""          # стабильный id рейса у источника, для сопоставления опросов
