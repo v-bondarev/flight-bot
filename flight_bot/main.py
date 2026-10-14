@@ -55,9 +55,15 @@ def make_send(tg: Bot, conn: sqlite3.Connection) -> poller.Send:
     return send
 
 
-async def main() -> None:
+def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx на INFO пишет каждый запрос с полным URL, а ключи AirLabs/scrape.do — в URL.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+async def main() -> None:
+    setup_logging()
     config.load_env(os.getenv("FLIGHT_BOT_ENV", ".env"))
     settings = config.load()
     if not settings.bot_token:

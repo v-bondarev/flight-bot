@@ -69,3 +69,15 @@ def test_push_goes_to_topic_and_falls_back_to_general():
     # тему забыли: следующие пуши сразу в General, чужую тему не тронули
     threads = {r["flight"]: r["thread_id"] for r in storage.list_for_chat(conn, -1)}
     assert threads["SU7"] is None and threads["SU8"] == 8
+
+
+def test_request_urls_with_keys_do_not_reach_the_log(caplog):
+    """httpx пишет INFO «HTTP Request: GET …?api_key=…» — ключи AirLabs/scrape.do в URL."""
+    import logging
+    main.setup_logging()
+    with caplog.at_level(logging.INFO):
+        logging.getLogger("httpx").info("HTTP Request: GET https://airlabs.co/api/v9/flight?api_key=SECRET")
+    assert "SECRET" not in caplog.text
+    with caplog.at_level(logging.INFO):
+        logging.getLogger("httpx").warning("connection pool full")
+    assert "connection pool full" in caplog.text            # предупреждения httpx не теряем
