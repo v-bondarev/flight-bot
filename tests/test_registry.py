@@ -190,6 +190,15 @@ def test_schedule_without_budget_db_never_pays(monkeypatch):
     assert sched.calls == 0
 
 
+def test_budget_db_error_keeps_board_search_alive(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [_snap("2026-10-14")], sched)
+    registry._budget_conn.close()                    # диск/блокировка: списать не можем
+    got = asyncio.run(registry.search("GF013", today=TODAY))
+    assert [s.date for s in got] == ["2026-10-14"]   # табло живо, платного запроса нет
+    assert sched.calls == 0
+
+
 def test_scheduled_card_from_cache_but_polling_never_sees_schedule(monkeypatch):
     sched = _Schedule([_snap("2026-10-17", source="aerodatabox.com")])
     _setup(monkeypatch, [], sched)

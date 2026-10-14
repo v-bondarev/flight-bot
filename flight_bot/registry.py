@@ -168,11 +168,22 @@ def _remember(flight_no: str, snaps: List[FlightSnapshot], ttl: float) -> None:
     _schedule_cache[flight_no] = (now + ttl, snaps)
 
 
+def _spend_budget() -> bool:
+    """Попытку списываем до запроса: тарифицирует ли RapidAPI ошибки — не знаем.
+    Не смогли списать (нет базы, диск, блокировка) — не платим."""
+    if _budget_conn is None:
+        return False
+    try:
+        return storage.spend_schedule_call(_budget_conn, SCHEDULE_BUDGET,
+                                           SCHEDULE_BUDGET_WINDOW_SEC)
+    except sqlite3.Error:
+        log.exception("бюджет расписания не списать — без платного запроса")
+        return False
+
+
 async def _load(flight_no: str) -> List[FlightSnapshot]:
-    # Попытку списываем до запроса: тарифицирует ли RapidAPI ошибки — не знаем.
-    if _budget_conn is None or not storage.spend_schedule_call(
-            _budget_conn, SCHEDULE_BUDGET, SCHEDULE_BUDGET_WINDOW_SEC):
-        log.warning("бюджет расписания исчерпан (%d за 31 день): %s только по табло",
+    if not _spend_budget():
+        log.warning("нет бюджета расписания (%d за 31 день): %s только по табло",
                     SCHEDULE_BUDGET, flight_no)
         return []
     try:
