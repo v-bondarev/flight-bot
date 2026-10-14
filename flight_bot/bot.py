@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import FrozenSet, Optional
+from typing import Dict, FrozenSet, Optional
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
@@ -29,19 +29,20 @@ from flight_bot.render import endpoints, status_card
 
 router = Router()
 
-# Задаётся в main из OWNER_IDS. Пусто — бот открыт всем, как раньше.
+# Задаётся в main из OWNER_IDS: кто управляет ботом в группах. Личка открыта всем.
 OWNERS: FrozenSet[int] = frozenset()
 
 
-def allowed(user_id: Optional[int]) -> bool:
-    return not OWNERS or user_id in OWNERS
+def allowed(chat_type: Optional[str], user_id: Optional[int]) -> bool:
+    return chat_type == "private" or not OWNERS or user_id in OWNERS
 
 
-# Фильтр на весь роутер: чужие сообщения не доходят до хендлеров.
-router.message.filter(lambda m: allowed(m.from_user.id if m.from_user else None))
+# Фильтр на весь роутер: чужие сообщения в группе не доходят до хендлеров.
+router.message.filter(lambda m: allowed(m.chat.type, m.from_user.id if m.from_user else None))
 
 
-@router.callback_query(lambda c: not allowed(c.from_user.id if c.from_user else None))
+@router.callback_query(lambda c: not allowed(c.message.chat.type if c.message else None,
+                                             c.from_user.id if c.from_user else None))
 async def foreign_tap(cb: CallbackQuery) -> None:
     """Чужое нажатие: молча гасим «часики» на кнопке, ничего не делаем."""
     await cb.answer()
@@ -67,9 +68,22 @@ GREETING = (
 )
 
 
+# Задаётся в main из GREET_NAMES: username → обращение на «вы».
+NAMES: Dict[str, str] = {}
+
+
+def greeting(name: str) -> str:
+    return (f"👋 Здравствуйте, {name}! Я Гейти!\n"
+            "✈️ Помогу Вам не пропустить свой рейс.\n"
+            "📡 Отслеживаю статус авиарейсов в реальном времени.\n"
+            "🔔 Сообщаю о задержках, изменениях расписания и назначении гейта.\n"
+            "Отправьте номер рейса (например, EK132), чтобы начать отслеживание.")
+
+
 @router.message(CommandStart())
 async def start(message: Message) -> None:
-    await message.answer(GREETING)
+    user = (message.from_user.username or "").lower() if message.from_user else ""
+    await message.answer(greeting(NAMES[user]) if user in NAMES else GREETING)
 
 
 @router.message(Command("help"))

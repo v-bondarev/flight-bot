@@ -6,11 +6,12 @@ from flight_bot import bot, config
 
 def test_owner_filter_allows_only_owners_and_everyone_when_unset(monkeypatch):
     monkeypatch.setattr(bot, "OWNERS", frozenset({620773}))
-    assert bot.allowed(620773)
-    assert not bot.allowed(2844343)
-    assert not bot.allowed(None)                 # от имени чата (sender_chat) — без from_user
+    assert bot.allowed("supergroup", 620773)
+    assert not bot.allowed("supergroup", 2844343)
+    assert not bot.allowed("group", None)        # от имени чата (sender_chat) — без from_user
+    assert bot.allowed("private", 2844343)       # личка открыта всем
     monkeypatch.setattr(bot, "OWNERS", frozenset())
-    assert bot.allowed(2844343)                  # OWNER_IDS пуст — как раньше
+    assert bot.allowed("supergroup", 2844343)    # OWNER_IDS пуст — как раньше
 
 
 def test_flight_number_from_text_or_track_args():
@@ -31,7 +32,7 @@ def test_owner_ids_from_env(monkeypatch):
         config.load()
 
 
-def _feed(text, user_id, chat_type, monkeypatch):
+def _feed(text, user_id, chat_type, monkeypatch, username=None):
     """Прогнать апдейт через настоящий Dispatcher; вернуть, что бот ответил."""
     import asyncio
     from datetime import datetime
@@ -54,7 +55,7 @@ def _feed(text, user_id, chat_type, monkeypatch):
     chat_id = user_id if chat_type == "private" else -100500
     msg = Message(message_id=1, date=datetime.now(), text=text,
                   chat=Chat(id=chat_id, type=chat_type),
-                  from_user=User(id=user_id, is_bot=False, first_name="u"))
+                  from_user=User(id=user_id, is_bot=False, first_name="u", username=username))
     dp = Dispatcher()
     dp.include_router(bot.router)
     try:
@@ -67,7 +68,7 @@ def _feed(text, user_id, chat_type, monkeypatch):
 
 def test_dispatcher_owner_only_track_in_group_and_silence(monkeypatch):
     monkeypatch.setattr(bot, "OWNERS", frozenset({620773}))
-    assert _feed("EK770", 2844343, "private", monkeypatch) == []          # чужой — тишина
+    assert _feed("EK770", 2844343, "private", monkeypatch)[0].startswith("Рейс EK770")  # личка — всем
     assert _feed("/track EK770", 2844343, "supergroup", monkeypatch) == []
     track = _feed("/track EK770", 620773, "supergroup", monkeypatch)
     assert len(track) == 1 and "EK770" in track[0]                        # дошло до поиска
@@ -146,3 +147,23 @@ def test_subscribe_in_forum_topic_keeps_thread(monkeypatch):
     assert tap() is None                                   # General: темы нет
     # ответ на сообщение в обычной группе тоже несёт message_thread_id — это не тема
     assert tap(message_thread_id=9) is None
+
+
+def test_greet_names_from_env(monkeypatch):
+    monkeypatch.setattr(os, "environ", {"GREET_NAMES": "@MBondareva81=Марина Юрьевна, x=Y"})
+    assert config.load().greet_names == {"mbondareva81": "Марина Юрьевна", "x": "Y"}
+    monkeypatch.setattr(os, "environ", {"GREET_NAMES": "без-знака-равно"})
+    import pytest
+    with pytest.raises(SystemExit, match="GREET_NAMES"):
+        config.load()
+
+
+def test_named_user_is_greeted_formally(monkeypatch):
+    monkeypatch.setattr(bot, "OWNERS", frozenset({620773}))
+    monkeypatch.setattr(bot, "NAMES", {"mbondareva81": "Марина Юрьевна"})
+    said = _feed("/start", 555, "private", monkeypatch, username="MBondareva81")
+    assert said == [bot.greeting("Марина Юрьевна")]
+    assert said[0].startswith("👋 Здравствуйте, Марина Юрьевна! Я Гейти!")
+    assert "Отправьте номер рейса" in said[0] and "тебе" not in said[0]
+    assert _feed("/start", 620773, "private", monkeypatch) == [bot.GREETING]   # остальным — как было
+    assert _feed("/start", 777, "private", monkeypatch, username="someone") == [bot.GREETING]

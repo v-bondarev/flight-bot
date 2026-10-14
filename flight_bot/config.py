@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import FrozenSet
+from typing import Dict, FrozenSet
 
 
 @dataclass(frozen=True)
@@ -22,7 +22,8 @@ class Settings:
     scrapedo_concurrency: int   # одновременных запросов к scrape.do (кредиты платные)
     render_url: str             # резервный рендер VKO через туннель; основной путь — HTTP API
     render_cache_sec: int       # TTL кэша VKO HTTP-поиска и резервного HTML-рендера
-    owner_ids: FrozenSet[int]   # Telegram user id, чьи команды и кнопки бот принимает; пусто — все
+    owner_ids: FrozenSet[int]   # Telegram user id, чьи команды и кнопки бот принимает в группах; пусто — все
+    greet_names: Dict[str, str]  # username (без @, нижний регистр) → обращение на «вы» в приветствии
 
 
 def load_env(path: str = ".env") -> None:
@@ -51,6 +52,17 @@ def _owner_ids(raw: str) -> FrozenSet[int]:
         raise SystemExit(f"OWNER_IDS: ожидаются числовые Telegram id через запятую, а не {raw!r}")
 
 
+def _greet_names(raw: str) -> Dict[str, str]:
+    """«@user=Имя Отчество, other=…» → {"user": "Имя Отчество", …}."""
+    out = {}
+    for item in filter(str.strip, raw.split(",")):
+        user, sep, name = item.partition("=")
+        if not sep or not user.strip() or not name.strip():
+            raise SystemExit(f"GREET_NAMES: ожидается username=Обращение через запятую, а не {item.strip()!r}")
+        out[user.strip().lstrip("@").lower()] = name.strip()
+    return out
+
+
 def load() -> Settings:
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", ""),
@@ -68,4 +80,5 @@ def load() -> Settings:
         render_url=os.getenv("RENDER_URL", ""),
         render_cache_sec=int(os.getenv("RENDER_CACHE_SEC", "75")),
         owner_ids=_owner_ids(os.getenv("OWNER_IDS", "")),
+        greet_names=_greet_names(os.getenv("GREET_NAMES", "")),
     )

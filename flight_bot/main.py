@@ -63,8 +63,9 @@ async def main() -> None:
     if not settings.bot_token:
         raise SystemExit("BOT_TOKEN не задан (см. .env.example)")
     handlers.OWNERS = settings.owner_ids
+    handlers.NAMES = settings.greet_names
     if not handlers.OWNERS:
-        log.warning("OWNER_IDS пуст — бот принимает команды от всех")
+        log.warning("OWNER_IDS пуст — в группах бот принимает команды от всех")
 
     conn = storage.connect(settings.db_path)
     registry.configure(settings, conn)   # conn — бюджет платного расписания
