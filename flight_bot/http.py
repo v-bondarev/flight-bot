@@ -14,7 +14,7 @@ import asyncio
 import ssl
 import time
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 import certifi
 import httpx
@@ -42,6 +42,34 @@ def _scrapedo_semaphore() -> asyncio.Semaphore:
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 _HOP_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ProxyError)
+
+
+class SharedFetch:
+    """Ответ на ключ держим ttl секунд, одновременные запросы ключа склеиваем в один.
+
+    Для источников, у которых один ответ на всех (файл аэропорта, табло на дату):
+    иначе каждая подписка в цикле опроса качала бы его заново. Ошибку не кэшируем.
+    """
+
+    def __init__(self, ttl: float, clock: Callable[[], float] = time.monotonic):
+        self.ttl, self._clock = ttl, clock
+        self._cache: Dict[Any, tuple] = {}
+        self._inflight: Dict[Any, "asyncio.Future"] = {}
+
+    async def get(self, key: Any, load: Callable[[], Awaitable[Any]]) -> Any:
+        hit = self._cache.get(key)
+        if hit and self._clock() - hit[0] < self.ttl:
+            return hit[1]
+        task = self._inflight.get(key)
+        if task is None:
+            task = self._inflight[key] = asyncio.ensure_future(load())
+
+            def done(t: "asyncio.Future") -> None:
+                self._inflight.pop(key, None)
+                if not t.cancelled() and t.exception() is None:
+                    self._cache[key] = (self._clock(), t.result())
+            task.add_done_callback(done)
+        return await asyncio.shield(task)
 
 
 class Renderer:

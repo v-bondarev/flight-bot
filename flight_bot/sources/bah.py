@@ -8,24 +8,41 @@
 
 Даёт сегодня и завтра. Ловушка: на завтра API бывает отдаёт «Departed/Landed» с фактом
 позже текущего момента — такой факт не принимаем (иначе ложный пуш и снятие подписки).
+Ответ на дату один на все рейсы: держим DAY_TTL_SEC, одновременные запросы склеиваем.
+Статусы распознаём по смыслу (cancel/land/arriv/depart): полный словарь табло неизвестен.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from flight_bot.http import Fetcher
+import httpx
+
+from flight_bot.http import SSL_CONTEXT, UA, SharedFetch
 from flight_bot.models import Checkin, FlightSnapshot, Leg
 from flight_bot.sources.base import FlightSource
 from flight_bot.sources.led import canon
 
 BASE_URL = "https://www.bahrainairport.bh/api/FlightProxy/"
 AST = timezone(timedelta(hours=3))
-DONE = {"Departed", "Landed"}
+DAY_TTL_SEC = 60.0
+FUTURE_SLACK = timedelta(minutes=10)   # часы сервера и табло расходятся на минуты
 
-STATUS = {"On Time": "По расписанию", "Early": "Раньше расписания", "Delayed": "Задерживается",
-          "Departed": "Вылетел", "Landed": "Приземлился", "Cancelled": "Отменён"}
+STATUS = {"on time": "По расписанию", "early": "Раньше расписания", "delayed": "Задерживается"}
+
+
+def _status(raw: str) -> tuple:
+    """(текст для карточки, событие свершилось?) по смыслу, без точного словаря."""
+    low = raw.lower()
+    if "cancel" in low:
+        return "Отменён", False
+    if "land" in low or "arriv" in low:
+        return "Приземлился", True
+    if "depart" in low or "airborne" in low:
+        return "Вылетел", True
+    return STATUS.get(low, raw), False
 
 
 def _at(day: str, hhmm: str) -> Optional[str]:
@@ -42,15 +59,14 @@ def build(x: dict, wanted: str, direction: str, now: datetime) -> FlightSnapshot
     plan = _at(x.get("scheduledDate") or "", x.get("scheduledTime") or "")
     est = _at(x.get("estimatedDate") or "", x.get("estimatedTime") or "")
     fact = _at(x.get("actualDate") or "", x.get("actualTime") or "")
-    raw = x.get("remarks") or ""
-    if fact and datetime.fromisoformat(fact) > now:      # «факт» из будущего — не факт
+    status, done = _status(x.get("remarks") or "")
+    if fact and datetime.fromisoformat(fact) > now + FUTURE_SLACK:   # «факт» из будущего — не факт
         fact = None
-        if raw in DONE:
-            raw = "Estimated"
-    if raw not in DONE:
+        if done:
+            status, done = "Ожидается", False
+    if not done:
         fact = None
     own = Leg(plan=plan, est=est if est != plan else None, fact=fact)
-    status = "Ожидается" if raw == "Estimated" else STATUS.get(raw, raw)
     departure, arrival = (own, Leg()) if direction == "departure" else (Leg(), own)
     return FlightSnapshot(
         flight=wanted, date=(plan or "")[:10], direction=direction,
@@ -78,18 +94,22 @@ class BahSource(FlightSource):
 
     def __init__(self, timeout: float = 20.0):
         self._timeout = timeout
+        self._days = SharedFetch(DAY_TTL_SEC)
+
+    async def _board(self, url: str, day: str) -> list:
+        async with httpx.AsyncClient(timeout=self._timeout, verify=SSL_CONTEXT,
+                                     headers={"User-Agent": UA}) as client:
+            resp = await client.post(url, json={"date": day})
+            resp.raise_for_status()
+            return json.loads(resp.text).get("data") or []
 
     async def fetch(self, flight_no: str, date: Optional[str] = None,
                     direction: str = "departure") -> List[FlightSnapshot]:
-        import httpx
-
         today = datetime.now(AST).date()
         days = [datetime.fromisoformat(date).date()] if date else [today, today + timedelta(days=1)]
-        out: List[FlightSnapshot] = []
         url = BASE_URL + ("departures" if direction == "departure" else "arrivals")
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            for day in days:
-                resp = await client.post(url, json={"date": day.strftime("%d/%m/%Y")})
-                resp.raise_for_status()
-                out += parse(json.loads(resp.text).get("data") or [], flight_no, direction)
+        boards = await asyncio.gather(*(
+            self._days.get((url, d), lambda d=d: self._board(url, d.strftime("%d/%m/%Y")))
+            for d in days))
+        out = [s for data in boards for s in parse(data, flight_no, direction)]
         return [s for s in out if not date or s.date == date]

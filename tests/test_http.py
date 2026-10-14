@@ -120,3 +120,34 @@ def test_fetcher_clients_verify_with_our_context():
         return _Net(direct_ok=True).factory(**kw)
     asyncio.run(Fetcher(client_factory=factory).get(URL, P))
     assert seen == [SSL_CONTEXT]
+
+
+def test_shared_fetch_merges_concurrent_loads_and_does_not_cache_errors():
+    from flight_bot.http import SharedFetch
+    calls = []
+
+    async def load():
+        calls.append(1)
+        await asyncio.sleep(0.05)
+        return "file"
+
+    async def twenty():
+        sf = SharedFetch(60)
+        got = await asyncio.gather(*(sf.get("k", load) for _ in range(20)))
+        again = await sf.get("k", load)
+        return got, again
+    got, again = asyncio.run(twenty())
+    assert got == ["file"] * 20 and again == "file" and len(calls) == 1
+
+    async def boom():
+        calls.append(1)
+        raise RuntimeError("502")
+
+    async def twice():
+        sf = SharedFetch(60)
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                await sf.get("k", boom)
+    calls.clear()
+    asyncio.run(twice())
+    assert len(calls) == 2

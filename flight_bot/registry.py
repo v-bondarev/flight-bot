@@ -295,22 +295,27 @@ async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSna
 
 
 async def fetch_for(flight_no: str, date: str, direction: str,
-                    prefer: Optional[str] = None) -> Optional[FlightSnapshot]:
+                    prefer: Optional[str] = None,
+                    key: Optional[str] = None) -> Optional[FlightSnapshot]:
     """Снимок конкретного рейса на дату и направление — для опроса подписки.
 
     prefer — имя источника, где рейс нашли при подписке: его опрашиваем первым,
     остальные — только если он рейс потерял. Иначе с ростом числа табло каждый
     опрос ходил бы по всем подряд.
+    key — id записи у источника из прошлого снимка: на одну дату у табло бывает
+    две записи одного номера (DXB), опрос не должен прыгать между ними.
     """
     ordered = sorted(SOURCES, key=lambda s: 0 if s.name == prefer else 1)
     for src in ordered:
         try:
             snaps = await cached_fetch(src, flight_no, date, direction)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — источник отвалился, пробуем следующий
+            log.warning("опрос %s %s %s %s: %r", src.name, flight_no, date, direction, exc)
             continue
-        for s in snaps:
-            if s.date == date:
-                return (await enrich_iata([s]))[0]
+        same_day = [s for s in snaps if s.date == date]
+        if same_day:
+            pinned = next((s for s in same_day if key and s.key == key), same_day[0])
+            return (await enrich_iata([pinned]))[0]
     return None
 
 

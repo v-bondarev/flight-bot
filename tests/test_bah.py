@@ -30,3 +30,13 @@ def test_fact_from_the_future_is_not_trusted():
     assert dep.departure.fact is None and dep.status == "Ожидается"
     arr = bah.parse(FX["arrivals 15/10"]["data"], "GF283", "arrival", NOW)[0]
     assert arr.arrival.fact is None and arr.status == "Ожидается"
+
+
+def test_status_by_meaning_cancel_and_arrived():
+    from flight_bot.models import is_cancelled
+    row = dict(FX["arrivals 14/10"]["data"][0])
+    for word in ("Cancelled", "Canceled", "Flight Cancelled"):
+        assert is_cancelled(bah.parse([dict(row, remarks=word)], "GF13", "arrival", NOW)[0])
+    landed = dict(FX["arrivals 14/10"]["data"][1], remarks="Arrived")
+    s = bah.parse([landed], "GF6", "arrival", NOW)[0]
+    assert s.arrival.fact == "2026-10-14T06:31:00+03:00" and s.status == "Приземлился"

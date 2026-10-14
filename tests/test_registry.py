@@ -315,3 +315,14 @@ def test_search_timeout_does_not_cancel_shared_request_for_polling(monkeypatch):
     found, polled = asyncio.run(both())
     assert found == [] and polled is not None
     assert board.calls == 2          # вылет — один общий запрос, плюс прилёт из поиска
+
+
+def test_fetch_for_sticks_to_the_record_key_when_a_date_has_two(monkeypatch):
+    import dataclasses as dc
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    a = _snap("2026-10-15", source="dubaiairports.ae")
+    first, second = dc.replace(a, key="96"), dc.replace(a, key="97")
+    monkeypatch.setattr(registry, "SOURCES", [_Board("dubaiairports.ae", [first, second])])
+    got = asyncio.run(registry.fetch_for("GF013", "2026-10-15", "departure", key="97"))
+    assert got.key == "97"
+    assert asyncio.run(registry.fetch_for("GF013", "2026-10-15", "departure")).key == "96"

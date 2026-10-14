@@ -70,10 +70,11 @@ def expired(date: str, now: datetime) -> bool:
     return now >= day + timedelta(days=1 + EXPIRE_DAYS)
 
 
-async def _fetch(row: sqlite3.Row) -> Optional[FlightSnapshot]:
+async def _fetch(conn: sqlite3.Connection, row: sqlite3.Row) -> Optional[FlightSnapshot]:
     try:
+        last = storage.get_last(conn, row["id"])
         return await registry.fetch_for(row["flight"], row["date"], row["direction"],
-                                        prefer=row["source"])
+                                        prefer=row["source"], key=last.key if last else None)
     except Exception:  # noqa: BLE001 — один источник не должен ронять весь круг
         log.exception("опрос %s %s упал", row["flight"], row["date"])
         return None
@@ -91,7 +92,7 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
             rows.append(row)
     # Опрашиваем параллельно: табло через scrape.do отвечает десятки секунд,
     # по очереди одна медленная подписка тормозила бы все остальные.
-    snaps = await asyncio.gather(*(_fetch(r) for r in rows))
+    snaps = await asyncio.gather(*(_fetch(conn, r) for r in rows))
     for row, curr in zip(rows, snaps):
         try:
             await _handle(conn, send, row, curr, now, epoch, near)

@@ -9,16 +9,21 @@
 
 Вчера/сегодня/завтра, вылеты и прилёты. Ловушка: у времён рейсов суффикс «Z», но это
 местное время Дубая (+04:00) — EK770 «09:10:00Z» вылетает в 09:10 местного. Настоящий
-UTC — только LastFetchedAt. Файл ~3,7 МБ на весь аэропорт — держим его FILE_TTL_SEC.
-Стоек и посадки табло не даёт.
+UTC — только LastFetchedAt. Файл ~3,7 МБ на весь аэропорт — один на все подписки:
+держим FILE_TTL_SEC, одновременные загрузки склеиваем. Только напрямую: тащить такой
+файл через платный scrape.do незачем (с сервера бота хост открыт).
+Стоек и посадки табло не даёт; факт вылета — уход со стоянки (off-block), не взлёт.
 """
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Optional
 
-from flight_bot.http import Fetcher
+import httpx
+
+from flight_bot.http import SSL_CONTEXT, UA, SharedFetch
 from flight_bot.models import FlightSnapshot, Leg
 from flight_bot.sources.base import FlightSource
 from flight_bot.sources.led import canon
@@ -82,21 +87,18 @@ def parse(payload: dict, flight_no: str, direction: str) -> List[FlightSnapshot]
 class DxbSource(FlightSource):
     name = "dubaiairports.ae"
 
-    def __init__(self, scrapedo_api_key: str = "", timeout: float = 30.0,
-                 clock: Callable[[], float] = time.monotonic):
-        self.fetcher = Fetcher(scrapedo_api_key, timeout=timeout)
-        self._clock = clock
-        self._file: Optional[tuple] = None          # (ts, payload): один файл на все рейсы
+    def __init__(self, timeout: float = 30.0, clock: Callable[[], float] = time.monotonic):
+        self._timeout = timeout
+        self._file = SharedFetch(FILE_TTL_SEC, clock)
 
-    async def _payload(self) -> dict:
-        import json
-        if self._file and self._clock() - self._file[0] < FILE_TTL_SEC:
-            return self._file[1]
-        payload = json.loads(await self.fetcher.get(URL))
-        self._file = (self._clock(), payload)
-        return payload
+    async def _download(self) -> dict:
+        async with httpx.AsyncClient(timeout=self._timeout, verify=SSL_CONTEXT,
+                                     headers={"User-Agent": UA}) as client:
+            resp = await client.get(URL)
+            resp.raise_for_status()
+            return json.loads(resp.text)
 
     async def fetch(self, flight_no: str, date: Optional[str] = None,
                     direction: str = "departure") -> List[FlightSnapshot]:
-        snaps = parse(await self._payload(), flight_no, direction)
+        snaps = parse(await self._file.get(URL, self._download), flight_no, direction)
         return [s for s in snaps if not date or s.date == date]
