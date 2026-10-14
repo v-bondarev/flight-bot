@@ -13,8 +13,9 @@
 #          | sudo tee /etc/sudoers.d/flight-bot-deploy && sudo chmod 440 /etc/sudoers.d/flight-bot-deploy
 #        sudo visudo -cf /etc/sudoers.d/flight-bot-deploy
 #
-# Smoke: сервис active и PID не меняется SMOKE_SEC секунд (Restart=on-failure через
-# RestartSec=10 сменил бы PID). Не прошёл — откат на прежний коммит и рестарт.
+# Smoke: через SMOKE_SETTLE_SEC после рестарта сервис active и PID не меняется
+# SMOKE_SEC секунд (Restart=on-failure через RestartSec=10 сменил бы PID).
+# Не прошёл — откат на прежний коммит и рестарт.
 # Вывод уходит в публичный лог Actions: только SHA и состояния, журнал бота не печатаем.
 set -euo pipefail
 
@@ -68,7 +69,7 @@ apply() {
 
 smoke_ok() {
   local pid i
-  sleep 2
+  sleep "${SMOKE_SETTLE_SEC:-2}"
   pid=$(systemctl show -p MainPID --value flight-bot)
   [[ $pid != 0 ]] || return 1
   for ((i = 0; i < $1; i++)); do

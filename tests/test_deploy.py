@@ -74,7 +74,7 @@ def env(tmp_path, monkeypatch):
     (state / "pid").write_text("100\n")
     return {"work": work, "server": server, "state": state, "first": first,
             "env": {**os.environ, "PATH": f"{fakebin}:{os.environ['PATH']}",
-                    "FLIGHT_BOT_DIR": str(server), "FAKE_STATE": str(state), "SMOKE_SEC": "1",
+                    "FLIGHT_BOT_DIR": str(server), "FAKE_STATE": str(state), "SMOKE_SEC": "1", "SMOKE_SETTLE_SEC": "0",
                     "DEPLOY_LOCK": str(tmp_path / "deploy.lock")}}
 
 
