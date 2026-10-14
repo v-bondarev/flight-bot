@@ -15,7 +15,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
-from flight_bot import airports, storage
+from flight_bot import airports, health, storage
 from flight_bot.config import Settings
 from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
@@ -76,8 +76,12 @@ async def cached_fetch(src: FlightSource, flight_no: str, date: Optional[str],
 
         def done(t: "asyncio.Future") -> None:
             _fetch_inflight.pop(key, None)
-            if t.cancelled() or t.exception() is not None:
+            if t.cancelled():
                 return
+            if t.exception() is not None:
+                health.HEALTH.fail(src.name, t.exception())
+                return
+            health.HEALTH.ok(src.name)
             now = _clock()
             for k in [k for k, (ts, _) in _fetch_cache.items() if now - ts >= FETCH_TTL_SEC]:
                 del _fetch_cache[k]
@@ -239,10 +243,12 @@ async def _load(flight_no: str) -> List[FlightSnapshot]:
         return []
     try:
         snaps = [_fill_places(s) for s in await SCHEDULE.fetch(flight_no)]
-    except Exception:  # noqa: BLE001 — лимит/сеть: остаёмся с табло
+    except Exception as exc:  # noqa: BLE001 — лимит/сеть: остаёмся с табло
         log.warning("расписание %s недоступно", flight_no, exc_info=True)
+        health.HEALTH.fail(SCHEDULE.name, exc)
         snaps, ttl = [], SCHEDULE_FAIL_TTL_SEC
     else:
+        health.HEALTH.ok(SCHEDULE.name)
         ttl = SCHEDULE_TTL_SEC
     _remember(flight_no, snaps, ttl)
     return snaps

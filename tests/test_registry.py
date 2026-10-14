@@ -22,6 +22,8 @@ def _snap(d, dest="BAH", source=""):
 class _Schedule:
     """Расписание-заглушка: считает вызовы, чтобы проверить кэш."""
 
+    name = "aerodatabox.com"
+
     def __init__(self, snaps):
         self.snaps, self.calls = snaps, 0
 
@@ -87,6 +89,9 @@ def test_schedule_is_cached_and_failure_is_not_fatal(monkeypatch):
     assert sched.calls == 1                                  # запрос платный — кэш
 
     class _Broken:
+
+        name = "aerodatabox.com"
+
         async def fetch(self, *a, **kw):
             raise RuntimeError("429")
     _setup(monkeypatch, [_snap("2026-10-14")], _Broken())
@@ -95,6 +100,8 @@ def test_schedule_is_cached_and_failure_is_not_fatal(monkeypatch):
 
 def test_schedule_failure_is_cached_briefly(monkeypatch):
     class _Broken:
+        name = "aerodatabox.com"
+
         calls = 0
 
         async def fetch(self, *a, **kw):
@@ -175,6 +182,8 @@ def test_schedule_budget_spent_only_on_real_requests(monkeypatch):
 
 def test_failed_schedule_request_spends_budget(monkeypatch):
     class _Broken:
+        name = "aerodatabox.com"
+
         async def fetch(self, *a, **kw):
             raise RuntimeError("timeout")
     _setup(monkeypatch, [], _Broken())
@@ -326,3 +335,21 @@ def test_fetch_for_sticks_to_the_record_key_when_a_date_has_two(monkeypatch):
     got = asyncio.run(registry.fetch_for("GF013", "2026-10-15", "departure", key="97"))
     assert got.key == "97"
     assert asyncio.run(registry.fetch_for("GF013", "2026-10-15", "departure")).key == "96"
+
+
+def test_source_errors_feed_health_and_empty_answer_is_success(monkeypatch):
+    from flight_bot import health
+    seen = []
+
+    class _H:
+        def fail(self, name, exc): seen.append(("fail", name))
+        def ok(self, name): seen.append(("ok", name))
+    monkeypatch.setattr(health, "HEALTH", _H())
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+
+    class _Broken(_Board):
+        async def fetch(self, *a, **kw):
+            raise RuntimeError("TLS")
+    monkeypatch.setattr(registry, "SOURCES", [_Broken("pulkovoairport.ru"), _Board("svo.aero")])
+    asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
+    assert ("fail", "pulkovoairport.ru") in seen and ("ok", "svo.aero") in seen   # пусто — не сбой

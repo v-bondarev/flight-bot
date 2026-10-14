@@ -17,7 +17,7 @@ from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError,
                                 TelegramMigrateToChat)
 
 from flight_bot import bot as handlers
-from flight_bot import config, poller, registry, storage
+from flight_bot import config, health, poller, registry, storage
 
 log = logging.getLogger("flight_bot")
 
@@ -81,6 +81,14 @@ async def main() -> None:
     dp.include_router(handlers.router)
 
     send = make_send(tg, conn)
+
+    async def tell_owners(text: str) -> None:
+        for owner in settings.owner_ids:   # личный чат пользователя = его user id
+            try:
+                await tg.send_message(owner, text)
+            except Exception:  # noqa: BLE001 — предупреждение не должно ронять опрос
+                log.exception("предупреждение владельцу %s не ушло", owner)
+    health.HEALTH.notify = tell_owners
     background = set()  # держим ссылку, чтобы задачу не собрал GC
 
     async def on_startup() -> None:
