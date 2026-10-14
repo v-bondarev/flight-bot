@@ -1,0 +1,3 @@
+# Публичные сертификаты в git (хук git-gates пропускает только эти пути, по строке).
+# Не ключи: только CA и промежуточные, см. flight_bot/certs/*.pem.
+flight_bot/certs/globalsign_gcc_r46_dv_tls_ca_2025.pem
