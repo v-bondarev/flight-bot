@@ -57,3 +57,8 @@ def test_error_in_body_raises_instead_of_empty():
     import pytest
     with pytest.raises(airlabs.AirlabsError, match="unknown_api_key"):
         airlabs.parse({"error": {"code": "unknown_api_key", "message": "Unknown api_key"}}, "SU2128")
+
+
+def test_not_found_error_is_empty_not_failure():
+    """AirLabs отвечает на неизвестный рейс ошибкой not_found (прод, 14.10.2026) — это «рейса нет»."""
+    assert airlabs.parse({"error": {"code": "not_found", "message": "Flight not found"}}, "ZZ9999") is None
