@@ -8,7 +8,7 @@
 рейса (если он так и не появился на табло). Рейс, которого на табло ещё нет,
 до 00:00 МСК накануне даты не опрашиваем: табло держат только сегодня/завтра.
 
-send — async callable(chat_id, text): развязывает поллер с aiogram и делает
+send — async callable(chat_id, text, thread_id): развязывает поллер с aiogram и делает
 его тестируемым без сети; `now` прокидывается по той же причине.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ from flight_bot.render import update_message
 
 log = logging.getLogger("flight_bot.poller")
 
-Send = Callable[[int, str], Awaitable[None]]
+Send = Callable[[int, str, Optional[int]], Awaitable[None]]
 
 TICK_SEC = 60
 FAR_SEC = 3600
@@ -101,7 +101,7 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
         if prev is not None:
             changes = diff_snapshots(prev, curr)
             if changes:
-                await send(row["chat_id"], update_message(curr, changes))
+                await send(row["chat_id"], update_message(curr, changes), row["thread_id"])
         # Прилетел или отменён — рейс завершён, опрашивать дальше нечего.
         if curr.arrival.fact or is_cancelled(curr):
             storage.deactivate(conn, sub_id)
