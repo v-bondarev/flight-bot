@@ -16,6 +16,7 @@ class Settings:
     yandex_rasp_api_key: str    # реестр «номер → аэропорт» вне Москвы; пусто — не используем
     airlabs_api_key: str        # статус/маршрут по номеру вне наших табло; пусто — не используем
     aerodatabox_api_key: str    # расписание по номеру на 5 дней вперёд (RapidAPI); пусто — не используем
+    schedule_proxy_url: str     # выход для AeroDataBox (socks5://127.0.0.1:1081, туннель до DK); пусто — напрямую
     ru_proxy_url: str           # свой RU-выход для табло (socks5://127.0.0.1:1080 SSH-туннель до RU-хоста); пусто — сразу scrape.do
     scrapedo_concurrency: int   # одновременных запросов к scrape.do (кредиты платные)
     render_url: str             # резервный рендер VKO через туннель; основной путь — HTTP API
@@ -59,6 +60,7 @@ def load() -> Settings:
         yandex_rasp_api_key=os.getenv("YANDEX_RASP_API_KEY", ""),
         airlabs_api_key=os.getenv("AIRLABS_API_KEY", ""),
         aerodatabox_api_key=os.getenv("AERODATABOX_API_KEY", ""),
+        schedule_proxy_url=os.getenv("SCHEDULE_PROXY_URL", ""),
         ru_proxy_url=os.getenv("RU_PROXY_URL", ""),
         scrapedo_concurrency=int(os.getenv("SCRAPEDO_CONCURRENCY", "2")),
         render_url=os.getenv("RENDER_URL", ""),

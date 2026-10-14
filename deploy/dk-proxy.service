@@ -1,0 +1,28 @@
+# SSH-туннель с сервера бота до DK-хоста (webdock), SOCKS на localhost:1081 —
+# выход для AeroDataBox: RapidAPI отвечает 451 сети сервера бота (AS215540
+# в его списке «embargoed»), с датского адреса — 200. На DK-хосте ничего не
+# ставится — прокси делает сам sshd. Требования: autossh на сервере бота,
+# ключ пользователя сервиса в authorized_keys на DK-хосте, Host dk-host в
+# ~/.ssh/config пользователя (HostName — адрес webdock в WG-меше).
+#   sudo cp /opt/flight-bot/deploy/dk-proxy.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now dk-proxy
+#   curl -x socks5h://127.0.0.1:1081 -s https://ipinfo.io/country   # → DK
+[Unit]
+Description=dk-proxy — SOCKS через DK-хост для AeroDataBox (flight-bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vbondarev
+Environment=AUTOSSH_GATETIME=0
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
+  -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+  -D 127.0.0.1:1081 \
+  dk-host
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

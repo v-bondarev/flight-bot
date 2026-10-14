@@ -103,3 +103,93 @@ def test_inbound_flight_goes_to_arrival_board_dated_by_arrival(monkeypatch):
     assert [(s.date, s.direction, s.source) for s in got] == [
         ("2026-10-15", "arrival", "dme.ru"),                # табло, без дубля из расписания
         ("2026-10-17", "arrival", "aerodatabox.com")]       # дата прилёта, табло прилёта
+
+
+class _Board:
+    """Табло-заглушка: задержка, ответ, счётчик вызовов."""
+
+    def __init__(self, name, snaps=(), delay=0.0):
+        self.name, self.snaps, self.delay, self.calls = name, list(snaps), delay, 0
+
+    async def fetch(self, flight_no, date=None, direction="departure"):
+        self.calls += 1
+        await asyncio.sleep(self.delay)
+        return [s for s in self.snaps if s.direction == direction and (not date or s.date == date)]
+
+
+def test_probe_asks_boards_in_parallel_keeps_priority_and_skips_slow(monkeypatch):
+    import time as _time
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "PROBE_TIMEOUT_SEC", 0.5)
+    slow = _Board("slow", [_snap("2026-10-14", source="slow")], delay=5)
+    first = _Board("first", [_snap("2026-10-14", source="first")], delay=0.2)
+    second = _Board("second", [_snap("2026-10-15", source="second")], delay=0.1)
+    monkeypatch.setattr(registry, "SOURCES", [slow, first, second])
+    t = _time.monotonic()
+    got = asyncio.run(registry.probe("GF013"))
+    assert _time.monotonic() - t < 1.5                       # не 5 с медленного и не сумма
+    assert [s.source for s in got] == ["first"]              # приоритет — порядок SOURCES
+
+
+def test_probe_asks_airlabs_only_when_boards_are_empty(monkeypatch):
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")])
+    from flight_bot.sources.airlabs import AirlabsSource
+
+    class _Airlabs(_Board, AirlabsSource):
+        pass
+    airlabs = _Airlabs("airlabs.co", [_snap("2026-10-14", source="airlabs.co")])
+    monkeypatch.setattr(registry, "SOURCES", [board, airlabs])
+    assert asyncio.run(registry.probe("GF013"))[0].source == "svo.aero"
+    assert airlabs.calls == 0                                # платный — только если табло пусты
+
+
+def test_ten_concurrent_polls_of_one_flight_make_one_request(monkeypatch):
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")], delay=0.05)
+    monkeypatch.setattr(registry, "SOURCES", [board])
+
+    async def ten():
+        return await asyncio.gather(*(registry.fetch_for("GF013", "2026-10-14", "departure")
+                                      for _ in range(10)))
+    got = asyncio.run(ten())
+    assert all(s is not None for s in got) and board.calls == 1
+    asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
+    assert board.calls == 1                                  # в пределах TTL — из кэша
+
+
+def test_fetch_cache_expires_and_errors_are_not_cached(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "_clock", lambda: now[0])
+    board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")])
+    monkeypatch.setattr(registry, "SOURCES", [board])
+    asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
+    now[0] += registry.FETCH_TTL_SEC + 1
+    asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
+    assert board.calls == 2
+
+    class _Flaky(_Board):
+        async def fetch(self, *a, **kw):
+            self.calls += 1
+            raise RuntimeError("502")
+    flaky = _Flaky("dme.ru")
+    monkeypatch.setattr(registry, "SOURCES", [flaky])
+    asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
+    asyncio.run(registry.fetch_for("GF013", "2026-10-14", "departure"))
+    assert flaky.calls == 2                                  # ошибку не запоминаем
+
+
+def test_search_timeout_does_not_cancel_shared_request_for_polling(monkeypatch):
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "PROBE_TIMEOUT_SEC", 0.05)
+    board = _Board("svo.aero", [_snap("2026-10-14", source="svo.aero")], delay=0.2)
+    monkeypatch.setattr(registry, "SOURCES", [board])
+
+    async def both():
+        poll = asyncio.ensure_future(registry.fetch_for("GF013", "2026-10-14", "departure"))
+        found = await registry.probe("GF013", "2026-10-14")   # поиск сдаётся по таймауту
+        return found, await poll
+    found, polled = asyncio.run(both())
+    assert found == [] and polled is not None
+    assert board.calls == 2          # вылет — один общий запрос, плюс прилёт из поиска

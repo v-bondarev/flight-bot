@@ -11,12 +11,22 @@ dme.ru не отвечает с зарубежного адреса сервер
 from __future__ import annotations
 
 import asyncio
+import ssl
 import time
+from pathlib import Path
 from typing import Callable, Dict, Optional
 
+import certifi
 import httpx
 
 SCRAPEDO_URL = "https://api.scrape.do/"
+
+# Доверие: certifi + промежуточные, которые табло забывают отдать в цепочке
+# (Пулково с 12.10.2026). Проверку TLS не отключаем — лишь достраиваем цепочку.
+CERTS_DIR = Path(__file__).parent / "certs"
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+for _pem in sorted(CERTS_DIR.glob("*.pem")):
+    SSL_CONTEXT.load_verify_locations(cafile=str(_pem))
 # Одновременных запросов к scrape.do на процесс: кредиты платные, а поллер
 # опрашивает подписки параллельно. Семафор — по event loop (тесты гоняют
 # каждый свой), выставляется registry.configure из SCRAPEDO_CONCURRENCY.
@@ -104,7 +114,7 @@ class Fetcher:
 
     async def _via(self, proxy: Optional[str], url: str, params: Optional[dict]) -> str:
         async with self._factory(proxy=proxy, headers={"User-Agent": UA},
-                                 follow_redirects=True) as client:
+                                 follow_redirects=True, verify=SSL_CONTEXT) as client:
             r = await client.get(url, params=params,
                                  timeout=httpx.Timeout(self._timeout, connect=self._connect))
             r.raise_for_status()

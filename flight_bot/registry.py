@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 import time
@@ -38,6 +39,42 @@ SCHEDULE_TTL_SEC = 6 * 3600
 # Аэропорты наших табло: рейс сюда (а не отсюда) ищем на табло прилёта.
 BOARD_IATA = {"SVO", "DME", "VKO", "LED"}
 
+# Поиск в чате: табло медленнее этого считаем пустым, а не ждём его минутами
+# (Пулково через scrape.do — около минуты). Опрос подписок без лимита.
+PROBE_TIMEOUT_SEC = 15.0
+# Ответ источника на (рейс, дата, направление) общий для всех подписок и поиска:
+# 10 подписок на один рейс = один запрос за цикл. Одновременные — склеиваем.
+FETCH_TTL_SEC = 60.0
+_clock = time.monotonic
+_fetch_cache: Dict[tuple, Tuple[float, List[FlightSnapshot]]] = {}
+_fetch_inflight: Dict[tuple, "asyncio.Future"] = {}
+
+
+async def cached_fetch(src: FlightSource, flight_no: str, date: Optional[str],
+                       direction: str) -> List[FlightSnapshot]:
+    """src.fetch с кэшем FETCH_TTL_SEC и склейкой одновременных запросов.
+    Ошибку не запоминаем: следующий вызов спросит источник снова."""
+    key = (src.name, flight_no, date, direction)
+    hit = _fetch_cache.get(key)
+    if hit and _clock() - hit[0] < FETCH_TTL_SEC:
+        return hit[1]
+    task = _fetch_inflight.get(key)
+    if task is None:
+        task = asyncio.ensure_future(src.fetch(flight_no, date, direction))
+        _fetch_inflight[key] = task
+
+        def done(t: "asyncio.Future") -> None:
+            _fetch_inflight.pop(key, None)
+            if t.cancelled() or t.exception() is not None:
+                return
+            now = _clock()
+            for k in [k for k, (ts, _) in _fetch_cache.items() if now - ts >= FETCH_TTL_SEC]:
+                del _fetch_cache[k]
+            _fetch_cache[key] = (now, t.result())
+        task.add_done_callback(done)
+    # shield: таймаут поиска не должен отменить запрос, которого ждёт и опрос.
+    return await asyncio.shield(task)
+
 
 def configure(settings: Settings) -> None:
     """Источники с ключами — в конец списка: табло богаче, они первые.
@@ -59,7 +96,7 @@ def configure(settings: Settings) -> None:
         SOURCES.append(AirlabsSource(settings.airlabs_api_key))
     global SCHEDULE
     if settings.aerodatabox_api_key:
-        SCHEDULE = AeroDataBoxSource(settings.aerodatabox_api_key)
+        SCHEDULE = AeroDataBoxSource(settings.aerodatabox_api_key, proxy=settings.schedule_proxy_url)
 
 
 # Маршрут по номеру у AirLabs: (origin, dest). Кэш на процесс — маршрут у
@@ -108,14 +145,25 @@ async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
     return out
 
 
+async def _ask(src: FlightSource, flight_no: str, date: Optional[str],
+               direction: str) -> List[FlightSnapshot]:
+    try:
+        return await asyncio.wait_for(cached_fetch(src, flight_no, date, direction),
+                                      PROBE_TIMEOUT_SEC)
+    except Exception:  # noqa: BLE001 — источник отвалился или тормозит: для поиска пусто
+        return []
+
+
 async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapshot]:
-    """Найти рейс на любом настроенном табло. Возвращает первые непустые снимки."""
-    for src in SOURCES:
-        for direction in DIRECTIONS:
-            try:
-                snaps = await src.fetch(flight_no, date, direction)
-            except Exception:  # noqa: BLE001 — источник мог отвалиться, пробуем следующий
-                continue
+    """Найти рейс на настроенных табло. Табло опрашиваем разом (время поиска —
+    самое медленное табло, а не сумма), результат берём по порядку SOURCES.
+    Платные источники с ключом (AirLabs) — только если все табло пусты."""
+    boards = [s for s in SOURCES if not isinstance(s, AirlabsSource)]
+    keyed = [s for s in SOURCES if isinstance(s, AirlabsSource)]
+    for tier in (boards, keyed):
+        pairs = [(src, d) for src in tier for d in DIRECTIONS]
+        found = await asyncio.gather(*(_ask(src, flight_no, date, d) for src, d in pairs))
+        for snaps in found:
             if snaps:
                 return await enrich_iata(snaps)
     return []
@@ -179,9 +227,10 @@ async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSna
     табло ещё нет (табло держит только вчера/сегодня/завтра)."""
     today = today or datetime.now(MSK).date()
     last = (today + timedelta(days=HORIZON_DAYS)).isoformat()
-    boards = upcoming(await probe(flight_no), today)
+    found, planned = await asyncio.gather(probe(flight_no), schedule(flight_no))
+    boards = upcoming(found, today)
     have = {s.date for s in boards}
-    extra = [s for s in upcoming([_board_side(s) for s in await schedule(flight_no)], today)
+    extra = [s for s in upcoming([_board_side(s) for s in planned], today)
              if s.date not in have]
     return sorted((s for s in boards + extra if s.date <= last), key=lambda s: s.date)
 
@@ -197,7 +246,7 @@ async def fetch_for(flight_no: str, date: str, direction: str,
     ordered = sorted(SOURCES, key=lambda s: 0 if s.name == prefer else 1)
     for src in ordered:
         try:
-            snaps = await src.fetch(flight_no, date, direction)
+            snaps = await cached_fetch(src, flight_no, date, direction)
         except Exception:  # noqa: BLE001
             continue
         for s in snaps:

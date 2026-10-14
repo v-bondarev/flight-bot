@@ -43,3 +43,30 @@ def test_parse_uncertain_cancel_is_not_cancel_and_arrived_never_fakes_fact_from_
 def test_parse_skips_other_numbers_and_empty_payload():
     assert aerodatabox.parse(PAYLOAD, "EK771") == []
     assert aerodatabox.parse([], "EK770") == []
+
+
+def test_fetch_goes_through_schedule_proxy(monkeypatch):
+    import asyncio
+
+    import httpx
+    seen = {}
+
+    class _Client:
+        def __init__(self, **kw):
+            seen.update(kw)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, params=None):
+            seen["url"] = url
+            return httpx.Response(200, json=PAYLOAD, request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    src = aerodatabox.AeroDataBoxSource("k", proxy="socks5://127.0.0.1:1081")
+    snaps = asyncio.run(src.fetch("EK770", "2026-10-16"))
+    assert seen["proxy"] == "socks5://127.0.0.1:1081"
+    assert seen["url"].endswith("/flights/number/EK770/2026-10-16/2026-10-16")
+    assert len(snaps) == 3

@@ -57,9 +57,18 @@ HELP = (
 )
 
 
+GREETING = (
+    "👋 Привет! Я Гейти!\n"
+    "✈️ Помогу тебе не пропустить свой рейс.\n"
+    "📡 Отслеживаю статус авиарейсов в реальном времени.\n"
+    "🔔 Сообщаю о задержках, изменениях расписания и назначении гейта.\n"
+    "Отправь номер рейса (например, EK132), чтобы начать отслеживание."
+)
+
+
 @router.message(CommandStart())
 async def start(message: Message) -> None:
-    await message.answer("Слежу за рейсами ✈️\n\n" + HELP)
+    await message.answer(GREETING)
 
 
 @router.message(Command("help"))

@@ -101,3 +101,22 @@ def test_last_hop_is_retried_not_buried():
         asyncio.run(f.get(URL))
     # напрямую больше не ходим, прокси пробуем снова: туннель может подняться
     assert [c[0] for c in net.calls] == [None, "socks5://127.0.0.1:1080", "socks5://127.0.0.1:1080"]
+
+
+def test_tls_context_trusts_pulkovo_intermediate():
+    """Пулково с 12.10.2026 отдаёт сертификат без промежуточного — кладём его сами."""
+    from flight_bot.http import SSL_CONTEXT
+    subjects = {dict(x[0] for x in c["subject"]).get("commonName") for c in SSL_CONTEXT.get_ca_certs()}
+    assert "GlobalSign GCC R46 DV TLS CA 2025" in subjects
+    assert "GlobalSign Root R46" in subjects            # корень из certifi на месте
+
+
+def test_fetcher_clients_verify_with_our_context():
+    from flight_bot.http import SSL_CONTEXT
+    seen = []
+
+    def factory(**kw):
+        seen.append(kw.get("verify"))
+        return _Net(direct_ok=True).factory(**kw)
+    asyncio.run(Fetcher(client_factory=factory).get(URL, P))
+    assert seen == [SSL_CONTEXT]

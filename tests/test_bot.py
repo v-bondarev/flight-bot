@@ -107,3 +107,9 @@ def test_foreign_tap_is_answered_and_ignored(monkeypatch):
         dp.sub_routers.remove(bot.router)
         bot.router._parent_router = None
     assert answered == [2844343] and added == []          # часики погашены, подписки нет
+
+
+def test_start_greets_as_gatey(monkeypatch):
+    monkeypatch.setattr(bot, "OWNERS", frozenset({620773}))
+    said = _feed("/start", 620773, "private", monkeypatch)
+    assert said == [bot.GREETING] and said[0].startswith("👋 Привет! Я Гейти!")

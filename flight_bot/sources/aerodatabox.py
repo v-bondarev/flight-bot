@@ -7,7 +7,9 @@
          aircraft:{model}, airline:{name}} ]   — по элементу на дату
 
 Табло держат только вчера/сегодня/завтра, а этот метод отдаёт и будущие даты,
-по всему миру. Зато дорог: один запрос = 6 единиц из 400 бесплатных в месяц,
+по всему миру. RapidAPI отвечает 451 сети сервера бота (AS215540 считает
+«embargoed»), поэтому запросы идут через SCHEDULE_PROXY_URL (deploy/dk-proxy.service).
+Зато дорог: один запрос = 6 единиц из 400 бесплатных в месяц,
 поэтому зовём его только при поиске рейса (registry.search, с кэшем), а не в опросе.
 Дата рейса — локальная дата вылета, как и у табло.
 """
@@ -99,8 +101,9 @@ def parse(payload: list, flight_no: str) -> List[FlightSnapshot]:
 class AeroDataBoxSource(FlightSource):
     name = "aerodatabox.com"
 
-    def __init__(self, api_key: str, timeout: float = 20.0):
+    def __init__(self, api_key: str, proxy: str = "", timeout: float = 20.0):
         self._key = api_key
+        self._proxy = proxy or None     # RapidAPI режет адрес сервера бота (451) — выход через DK
         self._timeout = timeout
 
     async def fetch(
@@ -120,7 +123,8 @@ class AeroDataBoxSource(FlightSource):
         headers = {"X-RapidAPI-Key": self._key, "X-RapidAPI-Host": HOST}
         params = {"dateLocalRole": "Departure", "withAircraftImage": "false",
                   "withLocation": "false"}
-        async with httpx.AsyncClient(timeout=self._timeout, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, headers=headers,
+                                     proxy=self._proxy) as client:
             resp = await client.get(f"{BASE_URL}/{no}/{start}/{end}", params=params)
             if resp.status_code == 204:        # рейса нет в эти даты
                 return []
