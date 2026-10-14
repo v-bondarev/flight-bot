@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from flight_bot.models import FlightSnapshot, Leg, is_cancelled
@@ -18,6 +18,19 @@ from flight_bot.models import FlightSnapshot, Leg, is_cancelled
 
 def _hhmm(iso: Optional[str]) -> str:
     return iso[11:16] if iso and len(iso) >= 16 else "—"
+
+
+MSK = timezone(timedelta(hours=3))
+
+
+def with_msk(iso: Optional[str]) -> str:
+    """«09:10» местного; если аэропорт не в поясе МСК — «09:10 (08:10 МСК)».
+    Время без офсета (пояс неизвестен) — как есть, не угадываем."""
+    hhmm = _hhmm(iso)
+    d = _dt(iso)
+    if d is None or d.utcoffset() in (None, timedelta(hours=3)):
+        return hhmm
+    return f"{hhmm} ({d.astimezone(MSK):%H:%M} МСК)"
 
 
 def _dt(iso: Optional[str]) -> Optional[datetime]:
@@ -41,7 +54,7 @@ def _shift_min(a: Optional[str], b: Optional[str]) -> Optional[int]:
 
 def _leg_changes(label: str, done: str, a: Leg, b: Leg, shift_min: int) -> List[str]:
     if b.fact and not a.fact:
-        return [f"{done} в {_hhmm(b.fact)} (план {_hhmm(b.plan)})"]
+        return [f"{done} в {with_msk(b.fact)} (план {_hhmm(b.plan)})"]
     if b.fact:
         return []
     a_eff = a.est or a.plan
@@ -50,7 +63,7 @@ def _leg_changes(label: str, done: str, a: Leg, b: Leg, shift_min: int) -> List[
     if delta is None or abs(delta) < shift_min:
         return []
     sign = "+" if delta > 0 else "−"
-    return [f"⏱ {label}: {_hhmm(a_eff)} → {_hhmm(b_eff)} ({sign}{abs(delta)} мин)"]
+    return [f"⏱ {label}: {_hhmm(a_eff)} → {with_msk(b_eff)} ({sign}{abs(delta)} мин)"]
 
 
 def diff_snapshots(prev: FlightSnapshot, curr: FlightSnapshot,

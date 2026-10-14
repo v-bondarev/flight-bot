@@ -122,3 +122,13 @@ def test_arrival_board_without_departure_data_does_not_claim_in_flight():
                        dest_iata="BAH", status="По расписанию",
                        arrival=Leg(plan="2026-08-16T23:20:00+03:00"))
     assert countdown(s, NOW) == "До прилёта 2 ч 5 мин"
+
+
+def test_non_moscow_times_get_msk_in_brackets():
+    s = FlightSnapshot(flight="EK770", date="2026-10-16", direction="departure", origin_iata="DXB",
+                       dest_iata="CPT", status="",
+                       departure=Leg(plan="2026-10-16T09:10:00+04:00"),
+                       arrival=Leg(plan="2026-10-16T16:40:00+02:00"))
+    assert "🕒 Вылет 09:10 (08:10 МСК) · Прилёт 16:40 (17:40 МСК)" in status_card(s, NOW)
+    moscow = _su5822()
+    assert "МСК" not in status_card(moscow, NOW).split("\n")[3]          # московский рейс как был

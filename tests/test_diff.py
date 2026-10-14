@@ -97,4 +97,14 @@ def test_naive_time_outside_moscow_is_local():
     # Вылет из Новосибирска (+07:00): без офсета — местное, а не МСК.
     a = _snap(departure=Leg(plan="2026-09-06T10:00:00"))
     b = _snap(departure=Leg(plan="2026-09-06T10:00:00+07:00", est="2026-09-06T10:50:00+07:00"))
-    assert diff_snapshots(a, b) == ["⏱ Вылет: 10:00 → 10:50 (+50 мин)"]
+    assert diff_snapshots(a, b) == ["⏱ Вылет: 10:00 → 10:50 (06:50 МСК) (+50 мин)"]
+
+
+def test_shift_push_for_foreign_airport_shows_msk():
+    from flight_bot.models import FlightSnapshot, Leg
+    from flight_bot.diff import diff_snapshots
+    base = dict(flight="EK770", date="2026-10-16", direction="departure", origin_iata="DXB",
+                dest_iata="CPT", status="")
+    a = FlightSnapshot(**base, departure=Leg(plan="2026-10-16T09:10:00+04:00"))
+    b = FlightSnapshot(**base, departure=Leg(plan="2026-10-16T09:10:00+04:00", est="2026-10-16T09:40:00+04:00"))
+    assert any("09:10 → 09:40 (08:40 МСК) (+30 мин)" in line for line in diff_snapshots(a, b))

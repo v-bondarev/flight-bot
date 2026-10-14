@@ -12,6 +12,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+from flight_bot.diff import with_msk
 from flight_bot.models import FlightSnapshot, Leg, is_cancelled
 
 MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля",
@@ -54,8 +55,8 @@ def _leg_time(leg: Leg) -> str:
     if not cur:
         return "—"
     if leg.plan and leg.plan != cur:
-        return f"<s>{_hhmm(leg.plan)}</s> {_hhmm(cur)}"
-    return _hhmm(cur)
+        return f"<s>{_hhmm(leg.plan)}</s> {with_msk(cur)}"
+    return with_msk(cur)
 
 
 def _desks(desks: str) -> str:
