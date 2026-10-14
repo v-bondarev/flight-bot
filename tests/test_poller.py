@@ -113,3 +113,38 @@ def test_far_future_unseen_flight_sleeps_until_day_before(monkeypatch):
     wake = datetime(2026, 9, 9, 0, 0, tzinfo=MSK)           # 00:00 МСК накануне
     assert storage.due(conn, int(wake.timestamp()) - 1) == []
     assert len(storage.due(conn, int(wake.timestamp()))) == 1
+
+
+def test_interval_with_naive_departure_does_not_guess_zone():
+    # Пояс вылета неизвестен (не обязательно МСК) — не угадываем, опрашиваем часто.
+    naive = _snap(departure=Leg(plan="2026-09-07T12:00:00"))
+    assert poller.interval_for(naive, NOW, near=300) == 300
+
+
+def test_one_failing_subscription_does_not_break_the_round(monkeypatch):
+    conn = storage.connect(":memory:")
+    bad = storage.add(conn, 1, "SU2128", "2026-09-06")
+    good = storage.add(conn, 2, "SU2130", "2026-09-06")
+    send = _Sends()
+    _fixed(_snap(gate="129"), monkeypatch)
+    _run(conn, send)                                  # первый круг: запомнили оба
+
+    real_diff = poller.diff_snapshots
+
+    def flaky(prev, curr, *a, **kw):
+        if flaky.calls == 0:
+            flaky.calls += 1
+            raise TypeError("boom")
+        return real_diff(prev, curr, *a, **kw)
+    flaky.calls = 0
+    monkeypatch.setattr(poller, "diff_snapshots", flaky)
+    _fixed(_snap(gate="141"), monkeypatch)
+    later = NOW + timedelta(minutes=10)
+    _run(conn, send, later)
+
+    assert [c for c, _ in send.msgs] == [2]           # вторая подписка получила пуш
+    by_id = {r["id"]: r for r in storage.active_all(conn)}
+    epoch = int(later.timestamp())
+    assert by_id[bad]["next_at"] > epoch and by_id[good]["next_at"] > epoch
+    assert storage.get_last(conn, bad).gate == "129"  # снимок упавшей не перезаписан
+    assert storage.get_last(conn, good).gate == "141"

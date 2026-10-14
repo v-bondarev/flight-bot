@@ -52,7 +52,8 @@ def interval_for(snap: Optional[FlightSnapshot], now: datetime, near: int) -> in
     if snap.departure.fact:
         return near                          # в воздухе: следим за прилётом
     dep = _dt(snap.departure.est or snap.departure.plan)
-    if dep and dep - now > timedelta(hours=FAR_HOURS):
+    # Без офсета пояс вылета неизвестен (не обязательно МСК) — не угадываем.
+    if dep and dep.tzinfo and dep - now > timedelta(hours=FAR_HOURS):
         return FAR_SEC
     return near
 
@@ -91,22 +92,32 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
     # по очереди одна медленная подписка тормозила бы все остальные.
     snaps = await asyncio.gather(*(_fetch(r) for r in rows))
     for row, curr in zip(rows, snaps):
-        sub_id = row["id"]
-        if curr is None:
-            # рейса пока нет на табло — не ошибка, ждём следующего круга
-            storage.set_next(conn, sub_id, wake_at(row["date"], epoch, near))
-            continue
-        prev = storage.get_last(conn, sub_id)
-        storage.set_last(conn, sub_id, curr)
-        if prev is not None:
-            changes = diff_snapshots(prev, curr)
-            if changes:
-                await send(row["chat_id"], update_message(curr, changes))
-        # Прилетел или отменён — рейс завершён, опрашивать дальше нечего.
-        if curr.arrival.fact or is_cancelled(curr):
-            storage.deactivate(conn, sub_id)
-            continue
-        storage.set_next(conn, sub_id, epoch + interval_for(curr, now, near))
+        try:
+            await _handle(conn, send, row, curr, now, epoch, near)
+        except Exception:  # noqa: BLE001 — одна подписка не должна ронять весь круг
+            log.exception("подписка %s упала", row["id"])
+            storage.set_next(conn, row["id"], epoch + near)
+
+
+async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,
+                  curr: Optional[FlightSnapshot], now: datetime, epoch: int, near: int) -> None:
+    sub_id = row["id"]
+    if curr is None:
+        # рейса пока нет на табло — не ошибка, ждём следующего круга
+        storage.set_next(conn, sub_id, wake_at(row["date"], epoch, near))
+        return
+    prev = storage.get_last(conn, sub_id)
+    if prev is not None:
+        changes = diff_snapshots(prev, curr)
+        if changes:
+            await send(row["chat_id"], update_message(curr, changes))
+    # Снимок — после отправки: упавший дифф/пуш повторится на следующем круге.
+    storage.set_last(conn, sub_id, curr)
+    # Прилетел или отменён — рейс завершён, опрашивать дальше нечего.
+    if curr.arrival.fact or is_cancelled(curr):
+        storage.deactivate(conn, sub_id)
+        return
+    storage.set_next(conn, sub_id, epoch + interval_for(curr, now, near))
 
 
 async def run(conn: sqlite3.Connection, settings: Settings, send: Send) -> None:
