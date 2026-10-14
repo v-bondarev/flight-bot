@@ -42,6 +42,13 @@ def load_env(path: str = ".env") -> None:
                 os.environ[key] = val.strip().strip('"').strip("'")
 
 
+def _owner_ids(raw: str) -> FrozenSet[int]:
+    try:
+        return frozenset(int(x) for x in raw.split(",") if x.strip())
+    except ValueError:
+        raise SystemExit(f"OWNER_IDS: ожидаются числовые Telegram id через запятую, а не {raw!r}")
+
+
 def load() -> Settings:
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", ""),
@@ -56,5 +63,5 @@ def load() -> Settings:
         scrapedo_concurrency=int(os.getenv("SCRAPEDO_CONCURRENCY", "2")),
         render_url=os.getenv("RENDER_URL", ""),
         render_cache_sec=int(os.getenv("RENDER_CACHE_SEC", "75")),
-        owner_ids=frozenset(int(x) for x in os.getenv("OWNER_IDS", "").split(",") if x.strip()),
+        owner_ids=_owner_ids(os.getenv("OWNER_IDS", "")),
     )

@@ -36,9 +36,14 @@ def allowed(user_id: Optional[int]) -> bool:
     return not OWNERS or user_id in OWNERS
 
 
-# Фильтр на весь роутер: чужие сообщения и нажатия не доходят до хендлеров.
+# Фильтр на весь роутер: чужие сообщения не доходят до хендлеров.
 router.message.filter(lambda m: allowed(m.from_user.id if m.from_user else None))
-router.callback_query.filter(lambda c: allowed(c.from_user.id if c.from_user else None))
+
+
+@router.callback_query(lambda c: not allowed(c.from_user.id if c.from_user else None))
+async def foreign_tap(cb: CallbackQuery) -> None:
+    """Чужое нажатие: молча гасим «часики» на кнопке, ничего не делаем."""
+    await cb.answer()
 
 # Номер рейса: код 2 знака (буквы/цифры) + 1–4 цифры, пробел не обязателен.
 FLIGHT_RE = re.compile(r"^[A-Za-z0-9]{2}\s?\d{1,4}$")
@@ -82,7 +87,7 @@ def flight_number(text: Optional[str]) -> Optional[str]:
     return text.upper().replace(" ", "") if FLIGHT_RE.match(text) else None
 
 
-@router.message(Command("track"))
+@router.message(Command("track", ignore_case=True))
 async def track(message: Message, command: CommandObject) -> None:
     flight = flight_number(command.args)
     if flight is None:
@@ -91,7 +96,8 @@ async def track(message: Message, command: CommandObject) -> None:
     await offer_dates(message, flight)
 
 
-@router.message(F.text.regexp(FLIGHT_RE))
+# Голый номер — только в личке: в группе «10 30» тоже похоже на рейс, а поиск платный.
+@router.message(F.chat.type == "private", F.text.regexp(FLIGHT_RE))
 async def on_flight_number(message: Message) -> None:
     await offer_dates(message, flight_number(message.text))
 
