@@ -83,3 +83,18 @@ def test_chronology_before_tiles():
     a = _snap(gate="129")
     b = _snap(gate="130", departure=Leg(plan=DEP, est="2026-09-06T00:55:00+03:00"))
     assert diff_snapshots(a, b) == ["⏱ Вылет: 00:25 → 00:55 (+30 мин)", "🚪 Выход: 129 → 130"]
+
+
+def test_naive_time_takes_offset_of_its_pair():
+    # Время без офсета (старый снимок в БД, табло без пояса) — местное время
+    # того же аэропорта, что и у пары: смесь не роняет дифф TypeError'ом.
+    a = _snap(departure=Leg(plan="2026-09-06T00:25:00"))
+    b = _snap(departure=Leg(plan=DEP, est="2026-09-06T01:10:00+03:00"))
+    assert diff_snapshots(a, b) == ["⏱ Вылет: 00:25 → 01:10 (+45 мин)"]
+
+
+def test_naive_time_outside_moscow_is_local():
+    # Вылет из Новосибирска (+07:00): без офсета — местное, а не МСК.
+    a = _snap(departure=Leg(plan="2026-09-06T10:00:00"))
+    b = _snap(departure=Leg(plan="2026-09-06T10:00:00+07:00", est="2026-09-06T10:50:00+07:00"))
+    assert diff_snapshots(a, b) == ["⏱ Вылет: 10:00 → 10:50 (+50 мин)"]
