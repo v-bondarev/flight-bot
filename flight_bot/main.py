@@ -101,6 +101,7 @@ async def main() -> None:
             except Exception:  # noqa: BLE001 — предупреждение не должно ронять опрос
                 log.exception("предупреждение владельцу %s не ушло", owner)
     health.HEALTH.notify = tell_owners
+    health.HEALTH.attach(conn)          # серия ошибок и день напоминания переживают рестарт
     background = set()  # держим ссылку, чтобы задачу не собрал GC
 
     async def on_startup() -> None:

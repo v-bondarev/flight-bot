@@ -32,6 +32,17 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE TABLE IF NOT EXISTS schedule_calls (
     at INTEGER NOT NULL   -- epoch платного запроса расписания (бюджет квоты AeroDataBox)
 );
+CREATE TABLE IF NOT EXISTS source_health (   -- серия ошибок источника (health.py), переживает рестарт
+    source    TEXT PRIMARY KEY,
+    fails     INTEGER NOT NULL,
+    since     REAL    NOT NULL,   -- epoch первой ошибки серии
+    since_msk TEXT    NOT NULL,
+    alerted   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reminders (       -- когда последний раз напоминали о сроке ключа
+    name TEXT PRIMARY KEY,
+    day  TEXT NOT NULL
+);
 """
 
 # Колонки, добавленные после первого релиза: CREATE IF NOT EXISTS их в живую
@@ -185,3 +196,35 @@ def spend_schedule_call(conn: sqlite3.Connection, limit: int, window_sec: int,
         conn.execute("INSERT INTO schedule_calls (at) VALUES (?)", (now,))
     conn.commit()
     return used < limit
+
+
+def load_health(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+    return conn.execute("SELECT * FROM source_health").fetchall()
+
+
+def save_health(conn: sqlite3.Connection, source: str, fails: int, since: float,
+                since_msk: str, alerted: bool) -> None:
+    conn.execute(
+        """INSERT INTO source_health (source, fails, since, since_msk, alerted)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(source) DO UPDATE SET fails=excluded.fails, since=excluded.since,
+                 since_msk=excluded.since_msk, alerted=excluded.alerted""",
+        (source, fails, since, since_msk, int(alerted)),
+    )
+    conn.commit()
+
+
+def clear_health(conn: sqlite3.Connection, source: str) -> None:
+    conn.execute("DELETE FROM source_health WHERE source=?", (source,))
+    conn.commit()
+
+
+def reminder_day(conn: sqlite3.Connection, name: str) -> Optional[str]:
+    row = conn.execute("SELECT day FROM reminders WHERE name=?", (name,)).fetchone()
+    return row["day"] if row else None
+
+
+def set_reminder_day(conn: sqlite3.Connection, name: str, day: str) -> None:
+    conn.execute("INSERT INTO reminders (name, day) VALUES (?, ?) "
+                 "ON CONFLICT(name) DO UPDATE SET day=excluded.day", (name, day))
+    conn.commit()

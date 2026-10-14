@@ -107,3 +107,47 @@ def test_key_expiry_setting_parsed_and_validated(monkeypatch):
     monkeypatch.setenv("AIRLABS_KEY_EXPIRES", "05.11.2026")
     with pytest.raises(SystemExit, match="AIRLABS_KEY_EXPIRES"):
         config.load()
+
+
+def test_state_survives_restart_via_db():
+    """Выкатка посреди сбоя: новый процесс помнит тревогу и шлёт «✅», а не вторую «⚠️»."""
+    from flight_bot import storage
+    conn = storage.connect(":memory:")
+    now = [0.0]
+    h, sent = _tracker(now)
+    h.attach(conn)
+    for i in range(7):
+        now[0] = i * 300
+        _run(lambda: h.fail("pulkovoairport.ru", RuntimeError("TLS")))
+    assert len(sent) == 1
+
+    h2, sent2 = _tracker(now)                  # рестарт
+    h2.attach(conn)
+    now[0] = 3000
+    _run(lambda: h2.fail("pulkovoairport.ru", RuntimeError("TLS")))
+    assert sent2 == []                         # тревога уже была
+    _run(lambda: h2.ok("pulkovoairport.ru"))
+    assert len(sent2) == 1 and sent2[0].startswith("✅") and "01.01" not in sent2[0]
+
+    h3, sent3 = _tracker(now)
+    h3.attach(conn)
+    _run(lambda: h3.fail("pulkovoairport.ru", RuntimeError("TLS")))
+    assert sent3 == [] and h3._state["pulkovoairport.ru"].fails == 1   # после «✅» — с нуля
+
+
+def test_expiry_reminder_not_repeated_after_restart():
+    from datetime import date
+
+    from flight_bot import storage
+    conn = storage.connect(":memory:")
+    sent = []
+
+    async def notify(text):
+        sent.append(text)
+    h = health.Health(notify)
+    h.attach(conn)
+    _run(lambda: h.remind_expiry("AirLabs", date(2026, 11, 5), date(2026, 11, 1)))
+    h2 = health.Health(notify)
+    h2.attach(conn)
+    _run(lambda: h2.remind_expiry("AirLabs", date(2026, 11, 5), date(2026, 11, 1)))
+    assert len(sent) == 1
