@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Выкатка из GitHub Actions: пуш в `main` после зелёного pytest → SSH на сервер (ключ с forced command) → `deploy/deploy.sh`: только полный SHA из `main`, fast-forward, `pip install` при смене `requirements.txt`, рестарт, 30 с smoke (сервис active, PID не меняется), иначе откат на прежний коммит. sudo — только `systemctl restart flight-bot`. ADR-0005.
 - AirLabs: ошибка `not_found` («Flight not found») — это «рейса нет», а не отказ источника: после выката 14.10 мониторинг поднимал бы ложную тревогу на каждый неизвестный AirLabs рейс.
 - AirLabs: ошибка в теле ответа (`{"error": …}` — истёк ключ, лимит) — исключение `AirlabsError`, а не «рейса нет»: мониторинг предупредит владельцев; ошибки IATA-обогащения тоже идут в мониторинг. Поиск спрашивает AirLabs один раз, а не по разу на направление. `AIRLABS_KEY_EXPIRES` — напоминание владельцам о сроке ключа раз в день за 7 дней до даты и после неё.
 - CI: GitHub Actions (`.github/workflows/tests.yml`) — pytest на Python 3.12 (как на сервере) на каждый пуш и PR.
