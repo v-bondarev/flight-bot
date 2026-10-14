@@ -34,3 +34,10 @@ def test_cancelled_and_codeshare_lookup():
     rx = next(f for f in PAYLOAD["Flights"] if f["flightNumber"] == "RX 244")
     assert is_cancelled(dxb.parse(PAYLOAD, "RX244", "departure")[0])
     assert [s.flight for s in dxb.parse(PAYLOAD, "SA7157", "departure")][:1] == ["SA7157"]  # кодшер EK770
+
+
+def test_departed_taxiing_keeps_offblock_until_takeoff():
+    f = dict(next(x for x in PAYLOAD["Flights"] if x.get("actualTakeOffTime")))
+    f.pop("actualTakeOffTime")
+    s = dxb.build(f, "EK770", "departure")
+    assert s.departure.fact == "2026-10-14T09:21:13+04:00"     # рулит: факт не пропадает

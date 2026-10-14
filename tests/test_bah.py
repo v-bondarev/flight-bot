@@ -49,3 +49,12 @@ def test_english_statuses_translated_by_meaning():
              "Delayed": "Задерживается", "Diverted": "Ушёл на запасной", "Something New": "Something New"}
     for raw, text in cases.items():
         assert bah.parse([dict(row, remarks=raw)], "GF12", "departure", NOW)[0].status == text, raw
+
+
+def test_status_order_pitfalls():
+    row = dict(FX["departures 15/10"]["data"][0])
+    st = lambda raw: bah.parse([dict(row, remarks=raw)], "GF12", "departure", NOW)[0].status
+    assert st("Check-in Closed") == "Регистрация закрыта"
+    assert st("Delayed Departure") == "Задерживается"
+    assert st("Estimated Arrival") == "Ожидается"
+    assert st("Arrived Early") == "Приземлился"

@@ -31,7 +31,9 @@ DAY_TTL_SEC = 60.0
 FUTURE_SLACK = timedelta(minutes=10)   # часы сервера и табло расходятся на минуты
 
 # (ключевое слово, текст): первое совпадение по порядку. Полного словаря табло нет.
-WORDS = (("final", "Посадка заканчивается"), ("gate clos", "Посадка закончена"),
+WORDS = (("check-in clos", "Регистрация закрыта"), ("checkin clos", "Регистрация закрыта"),
+         ("counter clos", "Регистрация закрыта"),
+         ("final", "Посадка заканчивается"), ("gate clos", "Посадка закончена"),
          ("closed", "Посадка закончена"), ("board", "Посадка"), ("gate open", "Посадка"),
          ("check", "Регистрация"), ("divert", "Ушёл на запасной"), ("delay", "Задерживается"),
          ("early", "Раньше расписания"), ("on time", "По расписанию"), ("schedul", "По расписанию"),
@@ -43,9 +45,11 @@ def _status(raw: str) -> tuple:
     low = raw.lower()
     if "cancel" in low:
         return "Отменён", False
-    if "land" in low or "arriv" in low:
+    # Свершилось — только если статус с этого начинается: «Delayed Departure»,
+    # «Estimated Arrival», «Not Departed» — не факт.
+    if low.startswith(("landed", "arrived")):
         return "Приземлился", True
-    if "depart" in low or "airborne" in low:
+    if low.startswith(("departed", "airborne")):
         return "Вылетел", True
     return next((text for word, text in WORDS if word in low), raw), False
 

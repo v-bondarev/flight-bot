@@ -62,7 +62,13 @@ def build(f: dict, wanted: str, direction: str) -> FlightSnapshot:
     plan = _iso(f.get("scheduledoffblockTime" if direction == "departure" else "scheduledOnblockTime"))
     est = _iso(f.get("estimated" + side))
     # Факт вылета — взлёт (actualTakeOffTime), а не уход со стоянки: «вылетел» = в воздухе.
-    fact = _iso(f.get("actualTakeOffTime" if direction == "departure" else "actualOnBlockTime"))
+    # Пока взлёта нет, а табло уже «Departed», факт — уход со стоянки: иначе факт пропал бы
+    # на ~20 мин рулёжки и после взлёта пришёл бы повторный пуш «вылетел».
+    if direction == "departure":
+        fact = _iso(f.get("actualTakeOffTime")) or (
+            _iso(f.get("actualOffBlockTime")) if raw == "Departed" else None)
+    else:
+        fact = _iso(f.get("actualOnBlockTime"))
     own = Leg(plan=plan, est=est if est != plan else None, fact=fact)
     departure, arrival = (own, Leg()) if direction == "departure" else (Leg(), own)
     return FlightSnapshot(
