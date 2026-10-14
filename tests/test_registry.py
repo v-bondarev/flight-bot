@@ -2,9 +2,12 @@
 даты, которых нет на табло, добираем из расписания на HORIZON_DAYS вперёд."""
 import asyncio
 import dataclasses
+import types
+
+import pytest
 from datetime import date
 
-from flight_bot import registry
+from flight_bot import registry, storage
 from flight_bot.models import FlightSnapshot, Leg
 from flight_bot.registry import upcoming
 
@@ -33,6 +36,19 @@ def _setup(monkeypatch, boards, schedule):
     monkeypatch.setattr(registry, "probe", probe)
     monkeypatch.setattr(registry, "SCHEDULE", schedule)
     monkeypatch.setattr(registry, "_schedule_cache", {})
+    monkeypatch.setattr(registry, "_schedule_inflight", {})
+    monkeypatch.setattr(registry, "_budget_conn", storage.connect(":memory:"))
+
+
+def _spent():
+    return registry._budget_conn.execute("SELECT COUNT(*) FROM schedule_calls").fetchone()[0]
+
+
+def _clock(monkeypatch):
+    """Подменяет время только в registry: у цикла asyncio своё."""
+    clock = types.SimpleNamespace(t=1000.0)
+    monkeypatch.setattr(registry, "time", types.SimpleNamespace(monotonic=lambda: clock.t))
+    return clock
 
 
 def test_upcoming_drops_past_dates_keeps_today_and_dedups():
@@ -75,6 +91,112 @@ def test_schedule_is_cached_and_failure_is_not_fatal(monkeypatch):
             raise RuntimeError("429")
     _setup(monkeypatch, [_snap("2026-10-14")], _Broken())
     assert [s.date for s in asyncio.run(registry.search("GF013", today=TODAY))] == ["2026-10-14"]
+
+
+def test_schedule_failure_is_cached_briefly(monkeypatch):
+    class _Broken:
+        calls = 0
+
+        async def fetch(self, *a, **kw):
+            self.calls += 1
+            raise RuntimeError("429")
+    broken = _Broken()
+    _setup(monkeypatch, [], broken)
+    clock = _clock(monkeypatch)
+    assert asyncio.run(registry.schedule("GF013")) == []
+    assert asyncio.run(registry.schedule("GF013")) == []
+    assert broken.calls == 1                         # не ждём таймаут на каждом поиске
+    clock.t += registry.SCHEDULE_FAIL_TTL_SEC + 1
+    asyncio.run(registry.schedule("GF013"))
+    assert broken.calls == 2                         # но и не прячем расписание на 6 ч
+
+
+def test_concurrent_searches_share_one_paid_request(monkeypatch):
+    class _Slow(_Schedule):
+        async def fetch(self, *a, **kw):
+            self.calls += 1
+            await self.release.wait()
+            return self.snaps
+    sched = _Slow([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+
+    async def run():
+        sched.release = asyncio.Event()
+        a, b, c = (asyncio.create_task(registry.schedule("GF013")) for _ in range(3))
+        await asyncio.sleep(0)
+        c.cancel()                                   # ушедший ждать не отменяет общий запрос
+        sched.release.set()
+        return await a, await b
+    ra, rb = asyncio.run(run())
+    assert sched.calls == 1
+    assert ra == rb and [s.date for s in ra] == ["2026-10-16"]
+    assert registry._schedule_inflight == {}
+    assert _spent() == 1                             # ждавшие бюджет не тратят
+
+
+def test_request_cancelled_before_start_does_not_poison_number(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+
+    async def run():
+        waiter = asyncio.create_task(registry.schedule("GF013"))
+        await asyncio.sleep(0)                       # задача запроса создана, но не стартовала
+        assert sched.calls == 0
+        registry._schedule_inflight["GF013"].cancel()   # так бывает при остановке цикла
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        return await registry.schedule("GF013")
+    assert [s.date for s in asyncio.run(run())] == ["2026-10-16"]
+    assert sched.calls == 1
+
+
+def test_schedule_cache_is_bounded_and_drops_expired(monkeypatch):
+    _setup(monkeypatch, [], _Schedule([_snap("2026-10-16")]))
+    monkeypatch.setattr(registry, "SCHEDULE_CACHE_MAX", 2)
+    clock = _clock(monkeypatch)
+    for no in ("AA1", "BB2", "CC3"):
+        asyncio.run(registry.schedule(no))
+    assert list(registry._schedule_cache) == ["BB2", "CC3"]    # вытеснен самый старый
+    clock.t += registry.SCHEDULE_TTL_SEC + 1
+    assert registry.scheduled("BB2", "2026-10-16") is None     # протухшее не показываем
+    asyncio.run(registry.schedule("DD4"))
+    assert list(registry._schedule_cache) == ["DD4"]           # протухшие ушли при записи
+
+
+def test_schedule_budget_spent_only_on_real_requests(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+    monkeypatch.setattr(registry, "SCHEDULE_BUDGET", 2)
+    for no in ("AA1", "AA1", "BB2", "CC3"):
+        asyncio.run(registry.schedule(no))
+    assert sched.calls == 2                          # кэш-хит бесплатен, CC3 — сверх бюджета
+    assert "CC3" not in registry._schedule_cache     # отказ не кэшируем: окно освободится
+
+
+def test_failed_schedule_request_spends_budget(monkeypatch):
+    class _Broken:
+        async def fetch(self, *a, **kw):
+            raise RuntimeError("timeout")
+    _setup(monkeypatch, [], _Broken())
+    asyncio.run(registry.schedule("AA1"))
+    assert _spent() == 1                             # тарифицируют ли ошибки — не знаем
+
+
+def test_schedule_without_budget_db_never_pays(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [], sched)
+    monkeypatch.setattr(registry, "_budget_conn", None)
+    assert asyncio.run(registry.schedule("AA1")) == []
+    assert sched.calls == 0
+
+
+def test_budget_db_error_keeps_board_search_alive(monkeypatch):
+    sched = _Schedule([_snap("2026-10-16")])
+    _setup(monkeypatch, [_snap("2026-10-14")], sched)
+    registry._budget_conn.close()                    # диск/блокировка: списать не можем
+    got = asyncio.run(registry.search("GF013", today=TODAY))
+    assert [s.date for s in got] == ["2026-10-14"]   # табло живо, платного запроса нет
+    assert sched.calls == 0
 
 
 def test_scheduled_card_from_cache_but_polling_never_sees_schedule(monkeypatch):

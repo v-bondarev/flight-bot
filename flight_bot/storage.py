@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     next_at    INTEGER NOT NULL DEFAULT 0,   -- epoch следующего опроса (адаптивный)
     source     TEXT    NOT NULL DEFAULT '',  -- где рейс нашли при подписке (опрашиваем первым)
     UNIQUE(chat_id, flight, date)
+);
+CREATE TABLE IF NOT EXISTS schedule_calls (
+    at INTEGER NOT NULL   -- epoch платного запроса расписания (бюджет квоты AeroDataBox)
 );
 """
 
@@ -118,3 +122,16 @@ def set_last(conn: sqlite3.Connection, sub_id: int, snap: FlightSnapshot) -> Non
         (json.dumps(snap_to_dict(snap), ensure_ascii=False), sub_id),
     )
     conn.commit()
+
+
+def spend_schedule_call(conn: sqlite3.Connection, limit: int, window_sec: int,
+                        now: Optional[int] = None) -> bool:
+    """Списать платный запрос расписания, если за последние window_sec их меньше
+    limit. В базе, а не в памяти: рестарт бота бюджет не обнуляет."""
+    now = int(time.time()) if now is None else now
+    conn.execute("DELETE FROM schedule_calls WHERE at <= ?", (now - window_sec,))
+    used = conn.execute("SELECT COUNT(*) FROM schedule_calls").fetchone()[0]
+    if used < limit:
+        conn.execute("INSERT INTO schedule_calls (at) VALUES (?)", (now,))
+    conn.commit()
+    return used < limit
