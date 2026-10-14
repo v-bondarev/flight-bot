@@ -67,7 +67,10 @@ class SharedFetch:
             def done(t: "asyncio.Future") -> None:
                 self._inflight.pop(key, None)
                 if not t.cancelled() and t.exception() is None:
-                    self._cache[key] = (self._clock(), t.result())
+                    now = self._clock()
+                    for k in [k for k, (ts, _) in self._cache.items() if now - ts >= self.ttl]:
+                        del self._cache[k]
+                    self._cache[key] = (now, t.result())
             task.add_done_callback(done)
         return await asyncio.shield(task)
 
