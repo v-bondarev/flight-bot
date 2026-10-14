@@ -16,6 +16,7 @@ conn прокидывается через workflow-data диспетчера (�
 from __future__ import annotations
 
 import html
+import json
 import re
 import sqlite3
 from typing import Dict, FrozenSet, Optional
@@ -26,6 +27,7 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
 from flight_bot import registry, storage
+from flight_bot.models import snap_from_dict
 from flight_bot.render import endpoints, status_card
 
 router = Router()
@@ -48,8 +50,9 @@ async def foreign_tap(cb: CallbackQuery) -> None:
     """Чужое нажатие: молча гасим «часики» на кнопке, ничего не делаем."""
     await cb.answer()
 
-# Номер рейса: код 2 знака (буквы/цифры) + 1–4 цифры, пробел не обязателен.
-FLIGHT_RE = re.compile(r"^[A-Za-z0-9]{2}\s?\d{1,4}$")
+# Номер рейса: код 2 знака (буквы/цифры, хотя бы одна буква — «10 30» это время,
+# а поиск платный) + 1–4 цифры, пробел не обязателен.
+FLIGHT_RE = re.compile(r"^(?=[A-Za-z0-9]{2}\s?\d)[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]?\s?\d{1,4}$")
 
 HELP = (
     "Пришлите номер рейса (например <b>SU2128</b>) — покажу ближайшие даты, "
@@ -99,11 +102,19 @@ async def list_subs(message: Message, conn: sqlite3.Connection) -> None:
         await message.answer("Подписок нет. Пришлите номер рейса, чтобы добавить.")
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"❌ {r['flight']} {r['date'][8:10]}.{r['date'][5:7]}",
+        [InlineKeyboardButton(text=f"❌ {r['flight']} {r['date'][8:10]}.{r['date'][5:7]}{_route(r)}",
                               callback_data=f"del|{r['id']}")]
         for r in rows
     ])
     await message.answer("Ваши подписки:", reply_markup=kb)
+
+
+def _route(row: sqlite3.Row) -> str:
+    """« · SVO→AYT» из последнего снимка — подписки туда и обратно иначе не отличить."""
+    if not row["last_json"]:
+        return ""
+    o, d = endpoints(snap_from_dict(json.loads(row["last_json"])))
+    return f" · {o}→{d}" if o or d else ""
 
 
 def flight_number(text: Optional[str]) -> Optional[str]:
@@ -128,11 +139,16 @@ async def on_flight_number(message: Message) -> None:
 
 
 async def offer_dates(message: Message, flight: str) -> None:
+    # Табло и расписание отвечают до 15–20 с — пусть чат показывает «печатает».
+    await message.bot.send_chat_action(message.chat.id, "typing",
+                                       message_thread_id=message.message_thread_id)
     snaps = await registry.search(flight)
+    down = f"табло {', '.join(sorted(snaps.down))} сейчас не отвечают" if snaps.down else ""
     if not snaps:
         await message.answer(
-            f"Рейс {flight} не нашёл на доступных табло на ближайшие дни. "
-            "Проверьте номер или попробуйте позже."
+            f"Рейс {flight} не нашёл на доступных табло на ближайшие дни"
+            + (f", а {down} — попробуйте через несколько минут." if down
+               else ". Проверьте номер или попробуйте позже.")
         )
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -141,7 +157,9 @@ async def offer_dates(message: Message, flight: str) -> None:
             callback_data=f"sub|{flight}|{s.date}|{s.direction}|{s.source}")]
         for s in snaps
     ])
-    await message.answer(f"Нашёл {flight}. На какую дату следить?", reply_markup=kb)
+    await message.answer(f"Нашёл {flight}. На какую дату следить?"
+                         + (f"\n⚠️ {down[0].upper()}{down[1:]}, показываю, что есть." if down else ""),
+                         reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("sub|"))
@@ -153,6 +171,10 @@ async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     # message_thread_id тоже есть, но это не тема.
     thread_id = cb.message.message_thread_id if cb.message.is_topic_message else None
     storage.add(conn, cb.message.chat.id, flight, date, direction, source, thread_id)
+    # Часики гасим сразу: табло через scrape.do отвечает до минуты, Telegram
+    # ждёт ответа на callback ~30 с, и зависшая кнопка нажимается повторно.
+    await cb.answer()
+    await cb.message.edit_text(f"⏳ Подписал на {flight} {date[8:10]}.{date[5:7]}, смотрю табло…")
     snap = await registry.fetch_for(flight, date, direction, prefer=source)
     planned = None if snap else registry.scheduled(flight, date)
     if snap:
@@ -164,7 +186,6 @@ async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     else:
         text = f"✅ Подписал на {flight} {date}."
     await cb.message.edit_text(text)
-    await cb.answer()
 
 
 @router.callback_query(F.data.startswith("del|"))

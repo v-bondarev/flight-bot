@@ -31,6 +31,18 @@ from flight_bot.sources.vko import VkoSource
 
 DIRECTIONS = ("departure", "arrival")
 
+
+class Found(List[FlightSnapshot]):
+    """Результат поиска: снимки плюс имена источников, которые упали или не
+    уложились в таймаут, — «рейса нет» и «табло не отвечают» для пользователя
+    разные ответы."""
+
+    down: set
+
+    def __init__(self, snaps=(), down=()):
+        super().__init__(snaps)
+        self.down = set(down)
+
 log = logging.getLogger("flight_bot.registry")
 
 # Настроенные табло. Добавление источника = одна строка здесь.
@@ -163,29 +175,32 @@ async def enrich_iata(snaps: List[FlightSnapshot]) -> List[FlightSnapshot]:
 
 
 async def _ask(src: FlightSource, flight_no: str, date: Optional[str],
-               direction: str) -> List[FlightSnapshot]:
+               direction: str) -> Optional[List[FlightSnapshot]]:
+    """Снимки источника для поиска; None — источник упал или не уложился в таймаут."""
     try:
         return await asyncio.wait_for(cached_fetch(src, flight_no, date, direction),
                                       PROBE_TIMEOUT_SEC)
     except Exception as exc:  # noqa: BLE001 — источник отвалился или тормозит: для поиска пусто
         log.warning("проба %s %s %s: %s", src.name, flight_no, direction, describe(exc))
-        return []
+        return None
 
 
-async def probe(flight_no: str, date: Optional[str] = None) -> List[FlightSnapshot]:
+async def probe(flight_no: str, date: Optional[str] = None) -> Found:
     """Найти рейс на настроенных табло. Табло опрашиваем разом (время поиска —
     самое медленное табло, а не сумма), результат берём по порядку SOURCES.
     Платные источники с ключом (AirLabs) — только если все табло пусты, и одним
     запросом: к аэропорту они не привязаны, направление им не важно."""
     boards = [s for s in SOURCES if not isinstance(s, AirlabsSource)]
     keyed = [s for s in SOURCES if isinstance(s, AirlabsSource)]
+    down = set()
     for tier, dirs in ((boards, DIRECTIONS), (keyed, DIRECTIONS[:1])):
         pairs = [(src, d) for src in tier for d in dirs]
         found = await asyncio.gather(*(_ask(src, flight_no, date, d) for src, d in pairs))
+        down |= {src.name for (src, _), snaps in zip(pairs, found) if snaps is None}
         for snaps in found:
             if snaps:
-                return await enrich_iata(snaps)
-    return []
+                return Found(await enrich_iata(snaps), down)
+    return Found((), down)
 
 
 MSK = timezone(timedelta(hours=3))   # дата рейса на табло — московская
@@ -288,7 +303,7 @@ def scheduled(flight_no: str, date: str) -> Optional[FlightSnapshot]:
     return next((s for s in map(_board_side, _cached(flight_no) or []) if s.date == date), None)
 
 
-async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSnapshot]:
+async def search(flight_no: str, today: Optional[date] = None) -> Found:
     """Даты для подписки: сегодня…+HORIZON_DAYS. Табло богаче (стойки, выход),
     поэтому его снимок на дату главнее; расписание добирает даты, которых на
     табло ещё нет (табло держит только вчера/сегодня/завтра)."""
@@ -299,7 +314,8 @@ async def search(flight_no: str, today: Optional[date] = None) -> List[FlightSna
     have = {s.date for s in boards}
     extra = [s for s in upcoming([_board_side(s) for s in planned], today)
              if s.date not in have]
-    return sorted((s for s in boards + extra if s.date <= last), key=lambda s: s.date)
+    return Found(sorted((s for s in boards + extra if s.date <= last), key=lambda s: s.date),
+                 found.down)
 
 
 async def fetch_for(flight_no: str, date: str, direction: str,

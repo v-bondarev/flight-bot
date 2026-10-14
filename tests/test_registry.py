@@ -34,7 +34,7 @@ class _Schedule:
 
 def _setup(monkeypatch, boards, schedule):
     async def probe(flight_no, date=None):
-        return boards
+        return registry.Found(boards)
     monkeypatch.setattr(registry, "probe", probe)
     monkeypatch.setattr(registry, "SCHEDULE", schedule)
     monkeypatch.setattr(registry, "_schedule_cache", {})
@@ -365,3 +365,19 @@ def test_probe_asks_airlabs_once_not_per_direction(monkeypatch):
     monkeypatch.setattr(registry, "SOURCES", [_Board("svo.aero"), airlabs])
     assert asyncio.run(registry.probe("EK770"))[0].source == "airlabs.co"
     assert airlabs.calls == 1                                # направление AirLabs не важно
+
+
+def test_search_reports_sources_that_failed(monkeypatch):
+    """«Не нашёл» и «табло лежат» — разные ответы пользователю."""
+    monkeypatch.setattr(registry, "_fetch_cache", {})
+    monkeypatch.setattr(registry, "SCHEDULE", None)
+
+    class _Broken(_Board):
+        async def fetch(self, *a, **kw):
+            raise RuntimeError("TLS")
+    monkeypatch.setattr(registry, "SOURCES", [_Broken("pulkovoairport.ru"), _Board("svo.aero")])
+    got = asyncio.run(registry.search("GF013", today=TODAY))
+    assert got == [] and got.down == {"pulkovoairport.ru"}
+    monkeypatch.setattr(registry, "SOURCES", [_Board("svo.aero", [_snap("2026-10-14", source="svo.aero")])])
+    got = asyncio.run(registry.search("GF014", today=TODAY))
+    assert len(got) == 1 and got.down == set()
