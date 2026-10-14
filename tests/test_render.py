@@ -115,3 +115,10 @@ def test_checkin_tile_after_planned_start_without_fact():
     assert "по плану с 20:10" in status_card(s, NOW)              # 21:15 — уже после 20:10
     early = NOW.replace(hour=19)
     assert "откроется в 20:10" in status_card(s, early)
+
+
+def test_arrival_board_without_departure_data_does_not_claim_in_flight():
+    s = FlightSnapshot(flight="GF13", date="2026-08-16", direction="arrival", origin_iata="SVO",
+                       dest_iata="BAH", status="По расписанию",
+                       arrival=Leg(plan="2026-08-16T23:20:00+03:00"))
+    assert countdown(s, NOW) == "До прилёта 2 ч 5 мин"

@@ -100,9 +100,11 @@ def countdown(s: FlightSnapshot, now: datetime) -> str:
             if dp and dp > now:
                 return "До вылета " + human(dp - now)
         ar = _dt(s.arrival.est or s.arrival.plan)
+        # Табло прилёта (DXB, BAH) про вылет молчит: «в пути» — только если вылет был.
+        airborne = s.departure.fact or (s.departure.est or s.departure.plan)
         if ar and ar > now:
-            return "В пути, до прилёта " + human(ar - now)
-        return "Заходит на посадку"
+            return ("В пути, до прилёта " if airborne else "До прилёта ") + human(ar - now)
+        return "Заходит на посадку" if airborne else ""
     ci = s.checkin
     if not ci.start_fact and ci.start_plan:
         st = _dt(ci.start_plan)

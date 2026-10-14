@@ -21,7 +21,9 @@ from flight_bot.models import FlightRoute, FlightSnapshot
 from flight_bot.sources.aerodatabox import HORIZON_DAYS, AeroDataBoxSource
 from flight_bot.sources.airlabs import AirlabsSource
 from flight_bot.sources.base import AirportResolver, FlightSource
+from flight_bot.sources.bah import BahSource
 from flight_bot.sources.dme import DmeSource
+from flight_bot.sources.dxb import DxbSource
 from flight_bot.sources.led import LedSource
 from flight_bot.sources.svo import SvoSource
 from flight_bot.sources.vko import VkoSource
@@ -31,7 +33,8 @@ DIRECTIONS = ("departure", "arrival")
 log = logging.getLogger("flight_bot.registry")
 
 # Настроенные табло. Добавление источника = одна строка здесь.
-SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource(), VkoSource()]
+SOURCES: List[FlightSource] = [SvoSource(), DmeSource(), LedSource(), VkoSource(),
+                               DxbSource(), BahSource()]
 
 # Расписание на даты вперёд (AeroDataBox). Не в SOURCES: запрос платный, в опрос
 # подписок не ходит — только в поиск дат (search), с кэшем на SCHEDULE_TTL_SEC.
@@ -45,7 +48,7 @@ SCHEDULE_BUDGET = 60
 SCHEDULE_BUDGET_WINDOW_SEC = 31 * 86400
 _budget_conn: Optional[sqlite3.Connection] = None   # без базы платных запросов нет
 # Аэропорты наших табло: рейс сюда (а не отсюда) ищем на табло прилёта.
-BOARD_IATA = {"SVO", "DME", "VKO", "LED"}
+BOARD_IATA = {"SVO", "DME", "VKO", "LED", "DXB", "BAH"}
 
 # Поиск в чате: табло медленнее этого считаем пустым, а не ждём его минутами
 # (Пулково через scrape.do — около минуты). Опрос подписок без лимита.

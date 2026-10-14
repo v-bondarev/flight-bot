@@ -1,0 +1,32 @@
+"""Табло Бахрейна (BAH) на реальных ответах /api/FlightProxy: времена местные +03:00."""
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from flight_bot.sources import bah
+
+FX = json.loads((Path(__file__).parent / "fixtures" / "bah_flights.json").read_text())
+NOW = datetime(2026, 10, 14, 10, 45, tzinfo=timezone(timedelta(hours=3)))
+
+
+def test_arrival_gf013_gate_and_belt():
+    s = bah.parse(FX["arrivals 14/10"]["data"], "GF13", "arrival", NOW)[0]
+    assert (s.flight, s.date, s.direction) == ("GF13", "2026-10-14", "arrival")
+    assert (s.origin_iata, s.dest_iata, s.gate, s.baggage_belt) == ("SVO", "BAH", "18A", "A04")
+    assert s.arrival.plan == "2026-10-14T19:20:00+03:00" and s.arrival.fact is None
+    assert s.status == "По расписанию" and s.source == "bahrainairport.bh"
+
+
+def test_departure_fact_and_counter_zone():
+    s = bah.parse(FX["departures 14/10"]["data"], "FZ24", "departure", NOW)[0]
+    assert s.departure.fact == "2026-10-14T08:32:00+03:00" and s.status == "Вылетел"
+    gf = bah.parse(FX["departures 15/10"]["data"], "GF012", "departure", NOW)[0]
+    assert (gf.zone, gf.gate, gf.dest_iata) == ("E", "14B", "TBS")
+
+
+def test_fact_from_the_future_is_not_trusted():
+    """API отдаёт на завтра «Departed/Landed» с фактом позже текущего момента — это не факт."""
+    dep = bah.parse(FX["departures 15/10"]["data"], "GF101", "departure", NOW)[0]
+    assert dep.departure.fact is None and dep.status == "Ожидается"
+    arr = bah.parse(FX["arrivals 15/10"]["data"], "GF283", "arrival", NOW)[0]
+    assert arr.arrival.fact is None and arr.status == "Ожидается"

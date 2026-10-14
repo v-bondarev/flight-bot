@@ -213,7 +213,7 @@ def test_scheduled_card_from_cache_but_polling_never_sees_schedule(monkeypatch):
 
 def test_inbound_flight_goes_to_arrival_board_dated_by_arrival(monkeypatch):
     inbound = FlightSnapshot(
-        flight="EK133", date="2026-10-16", direction="departure", origin_iata="DXB",
+        flight="EK133", date="2026-10-16", direction="departure", origin_iata="IST",
         dest_iata="DME", status="", source="aerodatabox.com",
         departure=Leg(plan="2026-10-16T23:50:00+04:00"),
         arrival=Leg(plan="2026-10-17T04:10:00+03:00"))
