@@ -21,7 +21,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
-from flight_bot import health, registry, storage
+from flight_bot import health, registry, storage, watchdog
 from flight_bot.config import Settings
 from flight_bot.diff import diff_snapshots
 from flight_bot.models import FlightSnapshot, is_cancelled
@@ -142,6 +142,10 @@ async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,
 
 async def run(conn: sqlite3.Connection, settings: Settings, send: Send) -> None:
     while True:
+        try:
+            watchdog.notify()
+        except OSError:
+            log.exception("sd_notify не ушёл")
         if settings.airlabs_key_expires:
             health.HEALTH.remind_expiry("AirLabs", settings.airlabs_key_expires,
                                         datetime.now(MSK).date())
