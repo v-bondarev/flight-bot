@@ -96,7 +96,10 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
             await _handle(conn, send, row, curr, now, epoch, near)
         except Exception:  # noqa: BLE001 — одна подписка не должна ронять весь круг
             log.exception("подписка %s упала", row["id"])
-            storage.set_next(conn, row["id"], epoch + near)
+            try:
+                storage.set_next(conn, row["id"], epoch + near)
+            except Exception:  # noqa: BLE001 — БД легла: остальные подписки всё равно пробуем
+                log.exception("подписка %s: не записался следующий опрос", row["id"])
 
 
 async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,
@@ -111,7 +114,8 @@ async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,
         changes = diff_snapshots(prev, curr)
         if changes:
             await send(row["chat_id"], update_message(curr, changes), row["thread_id"])
-    # Снимок — после отправки: упавший дифф/пуш повторится на следующем круге.
+    # Снимок — после пуша: упавший дифф повторится на следующем круге. Ошибку
+    # отправки send глотает сам (main.py) — такой пуш не повторяется.
     storage.set_last(conn, sub_id, curr)
     # Прилетел или отменён — рейс завершён, опрашивать дальше нечего.
     if curr.arrival.fact or is_cancelled(curr):
