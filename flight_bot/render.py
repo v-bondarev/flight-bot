@@ -90,6 +90,10 @@ def _dot(s: FlightSnapshot) -> str:
 def countdown(s: FlightSnapshot, now: datetime) -> str:
     if s.arrival.fact or is_cancelled(s):
         return ""
+    # Без офсета пояс неизвестен (не обязательно МСК) — отсчёт не угадываем.
+    times = (s.departure.est or s.departure.plan, s.arrival.est or s.arrival.plan, s.checkin.start_plan)
+    if any(d and d.tzinfo is None for d in map(_dt, times)):
+        return ""
     if s.direction == "arrival":
         if not s.departure.fact:
             dp = _dt(s.departure.est or s.departure.plan)

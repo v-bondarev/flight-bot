@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from flight_bot.diff import diff_snapshots
 from flight_bot.models import Checkin, FlightSnapshot, Leg
-from flight_bot.render import status_card, update_message
+from flight_bot.render import countdown, status_card, update_message
 
 MSK = timezone(timedelta(hours=3))
 NOW = datetime(2026, 8, 16, 21, 15, tzinfo=MSK)   # за 2 ч 10 мин до вылета
@@ -93,3 +93,11 @@ def test_update_message_format():
         "⏱ Вылет: 23:25 → 23:55 (+30 мин)\n"
         "🚪 Выход: 101 → 103"
     )
+
+
+def test_countdown_without_offset_is_not_guessed():
+    # Пояс без офсета неизвестен (вылет не из Москвы — местное время):
+    # отсчёт не угадываем и не падаем; карточка строится.
+    s = _su5822(departure=Leg(plan="2026-08-16T23:25:00"))
+    assert countdown(s, NOW) == ""
+    assert "SU5822" in status_card(s, NOW)

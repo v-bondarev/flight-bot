@@ -31,6 +31,11 @@ def _shift_min(a: Optional[str], b: Optional[str]) -> Optional[int]:
     da, db = _dt(a), _dt(b)
     if not da or not db:
         return None
+    # Время без офсета — местное того же аэропорта, что и у пары: берём её пояс.
+    if da.tzinfo is None:
+        da = da.replace(tzinfo=db.tzinfo)
+    elif db.tzinfo is None:
+        db = db.replace(tzinfo=da.tzinfo)
     return int(round((db - da).total_seconds() / 60))
 
 
