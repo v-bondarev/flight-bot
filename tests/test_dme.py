@@ -116,7 +116,8 @@ def test_delay_only_in_ticker_becomes_estimate():
     """Задержка, которую DME показывает только бегущей строкой при пустой колонке
     «факт»: бот должен увидеть новое время, иначе пуша о задержке нет (15.10, EK132)."""
     row = dme.parse_board(_fx("dme_rows_ek132.html"), "EK132", date(2026, 10, 14))[1]
-    for ticker in ("Регистрация закрыта · Задерживается до 00:30",
+    for ticker in ("Регистрация закрыта · 00:30 Вылет задерживается",   # так у EK132 15.10
+                   "Регистрация закрыта · Задерживается до 00:30",
                    "Вылет задержан до 00:30 · Выход E14",
                    "Рейс перенесен на 00:30"):
         s = dme.build({**row, "fact": None, "ticker": ticker, "status": ticker.split(" · ")[0]},
@@ -129,6 +130,10 @@ def test_delay_only_in_ticker_becomes_estimate():
                   {}, "departure")
     assert s.departure.est == "2026-10-14T23:50:00+03:00"
     assert dme.build({**row, "fact": None}, {}, "departure").departure.est is None
+    # Время чужого пункта строки задержкой не считаем.
+    s = dme.build({**row, "fact": None, "ticker": "Регистрация в 20:10 · Вылет задерживается"},
+                  {}, "departure")
+    assert s.departure.est is None
 
 
 def test_delay_only_in_ticker_gives_push():
