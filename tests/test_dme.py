@@ -142,3 +142,14 @@ def test_delay_only_in_ticker_gives_push():
     prev = dme.build({**row, "fact": None}, {}, "departure")
     curr = dme.build({**row, "fact": None, "ticker": "Задерживается до 00:30"}, {}, "departure")
     assert any("Вылет позже на 80 мин: теперь 00:30, было 23:10" in c for c in diff_snapshots(prev, curr))
+
+
+def test_delay_only_on_detailed_page():
+    """15.10 EK132: строка табло без задержки («Регистрация закрыта · Выход E14», колонка
+    факта пуста), а в Detailed — «23:50 Вылет задерживается». Бот молчал."""
+    det = dme.parse_detailed(_fx("dme_detailed_departure_delayed.html"))
+    assert det["delayed"] == "23:50" and det["dep_fact"] == ""
+    row = dme.parse_board(_fx("dme_rows_ek132.html"), "EK132", date(2026, 10, 14))[1]
+    row = {**row, "fact": None, "ticker": "Регистрация закрыта · Выход E14"}
+    assert dme.build(row, det, "departure").departure.est == "2026-10-14T23:50:00+03:00"
+    assert dme.parse_detailed(_fx("dme_detailed_departure.html"))["delayed"] == ""
