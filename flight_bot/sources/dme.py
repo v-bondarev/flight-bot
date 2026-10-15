@@ -146,6 +146,15 @@ def _ticker(text: str, plan: Optional[str], dep: Optional[str] = None) -> Dict:
             "boarding_min": str(minutes) if minutes > 0 else ""}
 
 
+_DELAY_RE = re.compile(r"(?:задерж|перенес|перенос)\w*\D{0,12}?(\d{1,2}:\d{2})", re.I)
+
+
+def _delayed_to(ticker: str, plan: Optional[str]) -> Optional[str]:
+    """Новое время из бегущей строки («Задерживается до 00:30»); после полуночи — следующий день."""
+    m = _DELAY_RE.search(ticker)
+    return _at(plan, m.group(1), not_before=plan) if m else None
+
+
 def build(row: Dict, det: Dict, direction: str) -> FlightSnapshot:
     """Строка табло + Detailed → снапшот. direction — чья сторона DME."""
     status = row["status"]
@@ -153,9 +162,11 @@ def build(row: Dict, det: Dict, direction: str) -> FlightSnapshot:
     own_done = ("вылетел" in st) if direction == "departure" else \
                any(k in st for k in ("посадк", "прибыл", "прилетел"))
     # Факт-ячейка табло: при свершившемся событии это факт, иначе — оценка.
+    # Пустая — задержка бывает только в бегущей строке: «Задерживается до 00:30».
+    est = row["fact"] or _delayed_to(row.get("ticker", ""), row["plan"])
     own = Leg(plan=row["plan"],
               fact=row["fact"] if own_done else None,
-              est=row["fact"] if (row["fact"] and not own_done and row["fact"] != row["plan"]) else None)
+              est=est if (est and not own_done and est != row["plan"]) else None)
     if direction == "departure":
         arr_plan = _at(row["plan"], det.get("arr", ""), not_before=row["plan"])
         other = Leg(plan=arr_plan, fact=_at(row["plan"], det.get("arr_fact", ""), not_before=row["plan"]))
