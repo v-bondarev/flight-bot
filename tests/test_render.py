@@ -114,6 +114,11 @@ def test_zone_shown_instead_of_terminal_when_no_terminal():
     assert "▸ Зона вылета E" in card and "Терминал" not in card
 
 
+def test_terminal_with_zone_shows_both():
+    card = status_card(_su5822(terminal="2", zone="E", gate_terminal=""), NOW)
+    assert "▸ Терминал 2 · зона вылета E" in card
+
+
 def test_checkin_tile_after_planned_start_without_fact():
     from flight_bot.models import Checkin
     s = _su5822(checkin=Checkin(desks="215-223", start_plan="2026-08-16T20:10:00+03:00"))

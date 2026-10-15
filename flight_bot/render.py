@@ -152,6 +152,8 @@ def _tiles_departure(s: FlightSnapshot, now: datetime) -> List[str]:
 
     term = ["Зона вылета " + _e(s.zone) if s.zone and not s.terminal
             else "Терминал " + (_e(s.terminal) or "—")]
+    if s.zone and s.terminal:
+        term.append("зона вылета " + _e(s.zone))
     if s.gate_terminal and s.gate_terminal != s.terminal:
         term.append("выход в терминале " + _e(s.gate_terminal))
     if s.baggage_belt:

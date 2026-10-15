@@ -47,7 +47,7 @@ def test_build_departure_snapshot():
     assert s.departure.est is None
     assert s.arrival.plan == "2026-09-05T18:45:00+03:00"        # из Detailed, на дату строки
     assert s.arrival.fact is None
-    assert (s.zone, s.terminal, s.aircraft, s.source, s.key) == ("C", "", "Airbus 320-200", "dme.ru", "11312869")
+    assert (s.zone, s.terminal, s.aircraft, s.source, s.key) == ("C", "1", "Airbus 320-200", "dme.ru", "11312869")
     assert not is_cancelled(s)
 
 
@@ -77,10 +77,15 @@ def _ek132():
     return [dme.build(r, {}, "departure") for r in rows]
 
 
-def test_zone_is_not_a_terminal():
-    """У DME один терминал; «Зона вылета E» — сектор выходов, а не терминал."""
+def test_terminal_from_departure_zone():
+    """Терминал табло не отдаёт, только зону вылета: E — Т2 (международные с 07.2023),
+    A, C, D, F — Т1. Незнакомую зону и прилёт в терминал не превращаем."""
     s = _ek132()[1]
-    assert (s.terminal, s.zone) == ("", "E")
+    assert (s.terminal, s.zone) == ("2", "E")
+    row = dme.parse_board(_fx("dme_rows_ek132.html"), "EK132", date(2026, 10, 14))[1]
+    assert dme.build({**row, "zone": "D"}, {}, "departure").terminal == "1"
+    assert dme.build({**row, "zone": "X"}, {}, "departure").terminal == ""
+    assert dme.build({**row, "zone": "E"}, {}, "arrival").terminal == ""
 
 
 def test_status_ticker_gives_desks_checkin_gate_and_boarding():
