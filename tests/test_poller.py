@@ -51,7 +51,7 @@ def test_first_poll_silent_then_change_notifies(monkeypatch):
     _fixed(_snap(gate="141"), monkeypatch)
     _run(conn, send, NOW + timedelta(minutes=10))   # next_at уже наступил
     assert len(send.msgs) == 1 and send.msgs[0][0] == 42
-    assert "129 → 141" in send.msgs[0][1]
+    assert "141 (был 129)" in send.msgs[0][1]
 
 
 def test_push_goes_to_subscription_topic(monkeypatch):
@@ -125,7 +125,7 @@ def test_expiry_of_seen_flight_says_tracking_stopped(monkeypatch):
     _run(conn, send, datetime(2026, 9, 8, 0, 1, tzinfo=MSK))
     assert storage.active_all(conn) == []
     assert len(send.msgs) == 1 and "не появился" not in send.msgs[0][1]
-    assert "слежение снято" in send.msgs[0][1].lower() and send.threads == [7]
+    assert "перестал следить" in send.msgs[0][1].lower() and send.threads == [7]
 
 
 def test_far_future_unseen_flight_sleeps_until_day_before(monkeypatch):

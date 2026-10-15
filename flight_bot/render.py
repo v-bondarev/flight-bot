@@ -69,8 +69,10 @@ def endpoints(s: FlightSnapshot):
 
 
 def route_line(s: FlightSnapshot) -> str:
-    o, d = endpoints(s)
-    return f"{s.flight} · {o}→{d} · {s.date[8:10]}.{s.date[5:7]}"
+    """«EK770 · Дубай → Кейптаун · 16 октября»: в пуше города понятнее кодов."""
+    o = s.origin_city or s.origin_iata
+    d = s.dest_city or s.dest_iata
+    return f"{s.flight} · {o} → {d} · {_day(s.date)}"
 
 
 def _dot(s: FlightSnapshot) -> str:
