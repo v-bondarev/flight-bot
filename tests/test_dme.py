@@ -110,3 +110,35 @@ def test_boarding_minutes_from_estimate_and_gate_formats():
     assert t["boarding_min"] == "96" and t["gate"] == "EA14"   # задержка на 30 мин учтена
     assert dme._ticker("Выход 12", "2026-10-14T23:10:00+03:00")["gate"] == "12"
     assert dme._ticker("Выход C12a", "2026-10-14T23:10:00+03:00")["gate"] == "C12a"
+
+
+def test_delay_only_in_ticker_becomes_estimate():
+    """Задержка, которую DME показывает только бегущей строкой при пустой колонке
+    «факт»: бот должен увидеть новое время, иначе пуша о задержке нет (15.10, EK132)."""
+    row = dme.parse_board(_fx("dme_rows_ek132.html"), "EK132", date(2026, 10, 14))[1]
+    for ticker in ("Регистрация закрыта · 00:30 Вылет задерживается",   # так у EK132 15.10
+                   "Регистрация закрыта · Задерживается до 00:30",
+                   "Вылет задержан до 00:30 · Выход E14",
+                   "Рейс перенесен на 00:30"):
+        s = dme.build({**row, "fact": None, "ticker": ticker, "status": ticker.split(" · ")[0]},
+                      {}, "departure")
+        assert s.departure.est == "2026-10-15T00:30:00+03:00", ticker     # через полночь
+    s = dme.build({**row, "fact": None, "ticker": "Задерживается до 23:40"}, {}, "departure")
+    assert s.departure.est == "2026-10-14T23:40:00+03:00"
+    # Колонка «факт» главнее строки; без задержки оценки нет.
+    s = dme.build({**row, "fact": "2026-10-14T23:50:00+03:00", "ticker": "Задерживается до 23:40"},
+                  {}, "departure")
+    assert s.departure.est == "2026-10-14T23:50:00+03:00"
+    assert dme.build({**row, "fact": None}, {}, "departure").departure.est is None
+    # Время чужого пункта строки задержкой не считаем.
+    s = dme.build({**row, "fact": None, "ticker": "Регистрация в 20:10 · Вылет задерживается"},
+                  {}, "departure")
+    assert s.departure.est is None
+
+
+def test_delay_only_in_ticker_gives_push():
+    from flight_bot.diff import diff_snapshots
+    row = dme.parse_board(_fx("dme_rows_ek132.html"), "EK132", date(2026, 10, 14))[1]
+    prev = dme.build({**row, "fact": None}, {}, "departure")
+    curr = dme.build({**row, "fact": None, "ticker": "Задерживается до 00:30"}, {}, "departure")
+    assert any("Вылет позже на 80 мин: теперь 00:30, было 23:10" in c for c in diff_snapshots(prev, curr))

@@ -146,6 +146,20 @@ def _ticker(text: str, plan: Optional[str], dep: Optional[str] = None) -> Dict:
             "boarding_min": str(minutes) if minutes > 0 else ""}
 
 
+_DELAY_RE = re.compile(r"задерж|перенес|перенос", re.I)
+_HHMM_RE = re.compile(r"\b(\d{1,2}:\d{2})\b")
+
+
+def _delayed_to(ticker: str, plan: Optional[str]) -> Optional[str]:
+    """Новое время из пункта бегущей строки о задержке: «23:30 Вылет задерживается»,
+    «Задерживается до 00:30». После полуночи — следующий день."""
+    for item in ticker.split(" · "):
+        m = _HHMM_RE.search(item) if _DELAY_RE.search(item) else None
+        if m:
+            return _at(plan, m.group(1), not_before=plan)
+    return None
+
+
 def build(row: Dict, det: Dict, direction: str) -> FlightSnapshot:
     """Строка табло + Detailed → снапшот. direction — чья сторона DME."""
     status = row["status"]
@@ -153,9 +167,11 @@ def build(row: Dict, det: Dict, direction: str) -> FlightSnapshot:
     own_done = ("вылетел" in st) if direction == "departure" else \
                any(k in st for k in ("посадк", "прибыл", "прилетел"))
     # Факт-ячейка табло: при свершившемся событии это факт, иначе — оценка.
+    # Пустая — задержка бывает только в бегущей строке: «Задерживается до 00:30».
+    est = row["fact"] or _delayed_to(row.get("ticker", ""), row["plan"])
     own = Leg(plan=row["plan"],
               fact=row["fact"] if own_done else None,
-              est=row["fact"] if (row["fact"] and not own_done and row["fact"] != row["plan"]) else None)
+              est=est if (est and not own_done and est != row["plan"]) else None)
     if direction == "departure":
         arr_plan = _at(row["plan"], det.get("arr", ""), not_before=row["plan"])
         other = Leg(plan=arr_plan, fact=_at(row["plan"], det.get("arr_fact", ""), not_before=row["plan"]))
