@@ -72,15 +72,16 @@ def _feed(text, user_id, chat_type, monkeypatch, username=None, search="empty"):
 
 def test_dispatcher_owner_only_track_in_group_and_silence(monkeypatch):
     monkeypatch.setattr(bot, "OWNERS", frozenset({620773}))
-    assert _feed("EK770", 2844343, "private", monkeypatch)[0].startswith("Рейс EK770")  # личка — всем
+    assert _feed("EK770", 2844343, "private", monkeypatch)[0].startswith("Не нашёл рейс EK770")  # личка — всем
     assert _feed("/track EK770", 2844343, "supergroup", monkeypatch) == []
     track = _feed("/track EK770", 620773, "supergroup", monkeypatch)
     assert len(track) == 1 and "EK770" in track[0]                        # дошло до поиска
     assert _feed("всем привет", 620773, "supergroup", monkeypatch) == []  # группа: не отвечаем
     assert _feed("10 30", 620773, "supergroup", monkeypatch) == []        # похоже на рейс — не ищем
     assert len(_feed("/Track EK770", 620773, "supergroup", monkeypatch)) == 1
-    assert _feed("всем привет", 620773, "private", monkeypatch)[0].startswith("Не похоже")
-    assert _feed("/track", 620773, "private", monkeypatch) == ["Укажите номер рейса: /track SU2128"]
+    assert _feed("всем привет", 620773, "private", monkeypatch)[0].startswith("Не узнал номер рейса")
+    assert _feed("/track", 620773, "private", monkeypatch) == [
+        "Напиши номер рейса после команды, например: /track SU2128"]
 
 
 def test_foreign_tap_is_answered_and_ignored(monkeypatch):
@@ -196,7 +197,7 @@ def test_search_tells_when_boards_are_down(monkeypatch):
     said = _feed("EK770", 1, "private", monkeypatch, search=None)
     assert "не отвечают" in said[0] and "dme.ru" in said[0] and "svo.aero" in said[0]
     search_returning([], set())
-    assert _feed("EK770", 1, "private", monkeypatch, search=None)[0].startswith("Рейс EK770 не нашёл")
+    assert _feed("EK770", 1, "private", monkeypatch, search=None)[0].startswith("Не нашёл рейс EK770")
 
 
 def test_subscribe_answers_callback_before_slow_board(monkeypatch):
@@ -227,7 +228,7 @@ def test_subscribe_answers_callback_before_slow_board(monkeypatch):
                        chat_instance="x", message=msg, data="sub|EK770|2026-10-16|departure|")
     asyncio.run(bot.on_subscribe(cb, storage.connect(":memory:")))
     assert order[0] == "answer" and order[1][0] == "edit" and "⏳" in order[1][1]
-    assert order[2] == "fetch" and order[3][1].startswith("✅ Подписал")
+    assert order[2] == "fetch" and order[3][1].startswith("✅ Готово")
 
 
 def test_list_shows_route_from_last_snapshot(monkeypatch):

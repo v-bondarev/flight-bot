@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -52,9 +53,10 @@ def _shift_min(a: Optional[str], b: Optional[str]) -> Optional[int]:
     return int(round((db - da).total_seconds() / 60))
 
 
-def _leg_changes(label: str, done: str, a: Leg, b: Leg, shift_min: int) -> List[str]:
+def _leg_changes(label: str, done: str, a: Leg, b: Leg, shift_min: int,
+                 tail: str = "") -> List[str]:
     if b.fact and not a.fact:
-        return [f"{done} в {with_msk(b.fact)} (план {_hhmm(b.plan)})"]
+        return [f"{done} в {with_msk(b.fact)} (по расписанию {_hhmm(b.plan)}){tail}"]
     if b.fact:
         return []
     a_eff = a.est or a.plan
@@ -62,8 +64,24 @@ def _leg_changes(label: str, done: str, a: Leg, b: Leg, shift_min: int) -> List[
     delta = _shift_min(a_eff, b_eff)
     if delta is None or abs(delta) < shift_min:
         return []
-    sign = "+" if delta > 0 else "−"
-    return [f"⏱ {label}: {_hhmm(a_eff)} → {with_msk(b_eff)} ({sign}{abs(delta)} мин)"]
+    when = "позже" if delta > 0 else "раньше"
+    return [f"⏱ {label} {when} на {abs(delta)} мин: теперь {with_msk(b_eff)}, было {_hhmm(a_eff)}"]
+
+
+def _gate_change(prev: FlightSnapshot, curr: FlightSnapshot) -> List[str]:
+    """Смена выхода — с тем, что это за выход и в каком аэропорту."""
+    if not curr.gate or curr.gate == prev.gate or curr.departure.fact:
+        return []      # после вылета смена выхода — уже история
+    if prev.source and curr.source and prev.source != curr.source:
+        return []      # выходы разных источников несравнимы: «смена» была бы ложной
+    if curr.direction == "arrival":
+        what, where = "гейт прилёта", curr.dest_iata or curr.dest_city
+    else:
+        what, where = "выход на посадку", curr.origin_iata or curr.origin_city
+    at = f" в {where}" if where else ""
+    if prev.gate:
+        return [f"🚪 Новый {what}{at}: {curr.gate} (был {prev.gate})"]
+    return [f"🚪 Назначен {what}{at}: {curr.gate}"]
 
 
 def diff_snapshots(prev: FlightSnapshot, curr: FlightSnapshot,
@@ -72,32 +90,35 @@ def diff_snapshots(prev: FlightSnapshot, curr: FlightSnapshot,
     out: List[str] = []
 
     if is_cancelled(curr) and not is_cancelled(prev):
-        return ["❌ Рейс отменён"]   # остальное после отмены уже неважно
+        # Остальное после отмены уже неважно.
+        return ["❌ Рейс отменён. Уточни варианты у авиакомпании, а я больше за ним не слежу."]
 
     # Хронология — по порядку событий рейса.
     pc, cc = prev.checkin, curr.checkin
     if cc.start_fact and not pc.start_fact:
-        where = f", стойки {curr.checkin.desks}" if curr.checkin.desks else ""
-        term = f", терминал {curr.terminal}" if curr.terminal else ""
-        out.append(f"🛎 Регистрация открыта{where}{term}")
+        where = ", ".join(filter(None, (
+            f"терминал {curr.terminal}" if curr.terminal else "",
+            "стойки " + re.sub(r",\s*", ", ", cc.desks) if cc.desks else "")))
+        out.append("🛎 Началась регистрация" + (f": {where}" if where else ""))
     if cc.finish_fact and not pc.finish_fact:
-        out.append(f"Регистрация закрыта в {_hhmm(cc.finish_fact)}")
+        out.append(f"🔒 Регистрация закончилась в {_hhmm(cc.finish_fact)}")
     pb, cb = prev.boarding, curr.boarding
     if cb.start_fact and not pb.start_fact:
         gate = f", выход {curr.gate}" if curr.gate else ""
-        out.append(f"🚶 Посадка началась{gate}")
+        out.append(f"🚶 Началась посадка{gate}. Пора к выходу!")
     if cb.finish_fact and not pb.finish_fact:
-        out.append(f"Посадка закончена в {_hhmm(cb.finish_fact)}")
-    out += _leg_changes("Вылет", "✈️ Вылетел", prev.departure, curr.departure, shift_min)
-    out += _leg_changes("Прилёт", "🛬 Прилетел", prev.arrival, curr.arrival, shift_min)
+        out.append(f"🔒 Посадка закончилась в {_hhmm(cb.finish_fact)}")
+    out += _leg_changes("Вылет", "✈️ Самолёт взлетел", prev.departure, curr.departure, shift_min)
+    out += _leg_changes("Прилёт", "🛬 Самолёт приземлился", prev.arrival, curr.arrival, shift_min,
+                        ". С прибытием!")
 
-    # Плитки. Смену выхода показываем только до вылета: после — уже история.
-    if curr.gate and curr.gate != prev.gate and not curr.departure.fact:
-        out.append(f"🚪 Выход: {prev.gate or '—'} → {curr.gate}")
+    # Плитки.
+    out += _gate_change(prev, curr)
     if curr.terminal and curr.terminal != prev.terminal:
-        out.append(f"🏢 Терминал: {prev.terminal or '—'} → {curr.terminal}")
+        out.append(f"🏢 Сменился терминал: теперь {curr.terminal}, был {prev.terminal}" if prev.terminal
+                   else f"🏢 Назначен терминал {curr.terminal}")
     if curr.baggage_belt and curr.baggage_belt != prev.baggage_belt:
-        out.append(f"🧳 Лента багажа {curr.baggage_belt}")
+        out.append(f"🧳 Багаж выдадут на ленте {curr.baggage_belt}")
     # У табло без времён фаз (VKO) смена фазы живёт только в статусе. Шлём её,
     # если больше ничего не изменилось и статус без цифр — статусы с временем
     # (SVO: «Регистрация в 18:25», «Прибыл … 06:07») дёргаются и не нужны.

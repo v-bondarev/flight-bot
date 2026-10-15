@@ -73,9 +73,9 @@ def expired(date: str, now: datetime) -> bool:
 
 def expiry_message(row: sqlite3.Row, seen: bool) -> str:
     when = f"{row['date'][8:10]}.{row['date'][5:7]}"
-    why = ("прошли сутки после даты рейса, прилёта табло не показало" if seen
-           else "на табло так и не появился")
-    return f"🔕 {row['flight']} {when} — {why}. Слежение снято."
+    why = ("прошли сутки, а прилёта на табло так и не было." if seen
+           else "рейс так и не появился на табло. Если он ещё нужен, пришли номер заново.")
+    return f"🔕 Перестал следить за {row['flight']} {when}: {why}"
 
 
 async def _fetch(conn: sqlite3.Connection, row: sqlite3.Row) -> Optional[FlightSnapshot]:

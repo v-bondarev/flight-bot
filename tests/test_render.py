@@ -89,10 +89,15 @@ def test_update_message_format():
                    departure=Leg(plan="2026-08-16T23:25:00+03:00",
                                  est="2026-08-16T23:55:00+03:00"))
     assert update_message(curr, diff_snapshots(prev, curr)) == (
-        "🔔 <b>SU5822 · SVO→UUS · 16.08</b>\n"
-        "⏱ Вылет: 23:25 → 23:55 (+30 мин)\n"
-        "🚪 Выход: 101 → 103"
+        "🔔 <b>SU5822 · Москва → Южно-Сахалинск · 16 августа</b>\n"
+        "⏱ Вылет позже на 30 мин: теперь 23:55, было 23:25\n"
+        "🚪 Новый выход на посадку в SVO: 103 (был 101)"
     )
+
+
+def test_update_message_header_falls_back_to_codes():
+    s = _su5822(origin_city="", dest_city="")
+    assert update_message(s, ["x"]).startswith("🔔 <b>SU5822 · SVO → UUS · 16 августа</b>\n")
 
 
 def test_countdown_without_offset_is_not_guessed():

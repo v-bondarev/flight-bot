@@ -54,11 +54,11 @@ async def foreign_tap(cb: CallbackQuery) -> None:
 FLIGHT_RE = re.compile(r"^(?=.*[A-Za-z])[A-Za-z0-9]{2}\s?\d{1,4}$")
 
 HELP = (
-    "Пришлите номер рейса (например <b>SU2128</b>) — покажу ближайшие даты, "
-    "выберите нужную, и я буду присылать все изменения: задержку, смену "
-    "терминала или выхода, вылет, прилёт, отмену.\n\n"
-    "/list — ваши подписки.\n"
-    "В группе: /track SU2128 — обновления придут в эту группу."
+    "Пришли номер рейса (например <b>SU2128</b>), и я покажу ближайшие даты. "
+    "Выбери нужную, и я буду писать обо всех изменениях: задержке, смене "
+    "терминала или выхода на посадку, вылете, прилёте, отмене.\n\n"
+    "/list — рейсы, за которыми я слежу.\n"
+    "В группе: /track SU2128 — новости по рейсу придут в эту группу."
 )
 
 
@@ -98,14 +98,15 @@ async def help_(message: Message) -> None:
 async def list_subs(message: Message, conn: sqlite3.Connection) -> None:
     rows = storage.list_for_chat(conn, message.chat.id)
     if not rows:
-        await message.answer("Подписок нет. Пришлите номер рейса, чтобы добавить.")
+        await message.answer("Пока ни за одним рейсом не слежу. Пришли номер, например SU2128.")
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"❌ {r['flight']} {r['date'][8:10]}.{r['date'][5:7]}{_route(r)}",
                               callback_data=f"del|{r['id']}")]
         for r in rows
     ])
-    await message.answer("Ваши подписки:", reply_markup=kb)
+    await message.answer("Слежу за этими рейсами. Нажми на рейс, чтобы перестать следить:",
+                         reply_markup=kb)
 
 
 def _route(row: sqlite3.Row) -> str:
@@ -126,7 +127,7 @@ def flight_number(text: Optional[str]) -> Optional[str]:
 async def track(message: Message, command: CommandObject) -> None:
     flight = flight_number(command.args)
     if flight is None:
-        await message.answer("Укажите номер рейса: /track SU2128")
+        await message.answer("Напиши номер рейса после команды, например: /track SU2128")
         return
     await offer_dates(message, flight)
 
@@ -146,9 +147,9 @@ async def offer_dates(message: Message, flight: str) -> None:
     down = f"табло {', '.join(sorted(snaps.down))} сейчас не отвечают" if snaps.down else ""
     if not snaps:
         await message.answer(
-            f"Рейс {flight} не нашёл на доступных табло на ближайшие дни"
-            + (f", а {down} — попробуйте через несколько минут." if down
-               else ". Проверьте номер или попробуйте позже.")
+            f"Не нашёл рейс {flight} на ближайшие дни"
+            + (f", а {down}. Попробуй через несколько минут." if down
+               else ". Проверь номер или попробуй позже.")
         )
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -174,17 +175,18 @@ async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     # Часики гасим сразу: табло через scrape.do отвечает до минуты, Telegram
     # ждёт ответа на callback ~30 с, и зависшая кнопка нажимается повторно.
     await cb.answer()
-    await cb.message.edit_text(f"⏳ Подписал на {flight} {date[8:10]}.{date[5:7]}, смотрю табло…")
+    when = f"{date[8:10]}.{date[5:7]}"
+    await cb.message.edit_text(f"⏳ Начинаю следить за {flight} {when}, смотрю табло…")
     snap = await registry.fetch_for(flight, date, direction, prefer=source)
     planned = None if snap else registry.scheduled(flight, date)
     if snap:
-        text = "✅ Подписал. Текущий статус:\n\n" + status_card(snap)
+        text = "✅ Готово! Напишу, как только что-то изменится. Сейчас так:\n\n" + status_card(snap)
     elif planned:
-        text = ("✅ Подписал. По расписанию:\n\n" + status_card(planned)
-                + "\n\nНа табло рейса пока нет — изменения начну присылать, "
-                  "как только он там появится (не раньше суток до вылета).")
+        text = ("✅ Готово! Пока знаю только расписание:\n\n" + status_card(planned)
+                + "\n\nНа табло рейса ещё нет. Начну присылать изменения, как только "
+                  "он там появится (не раньше чем за сутки до вылета).")
     else:
-        text = f"✅ Подписал на {flight} {date}."
+        text = f"✅ Готово, слежу за {flight} {when}. Напишу, как только рейс появится на табло."
     await cb.message.edit_text(text)
 
 
@@ -192,10 +194,10 @@ async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
 async def on_unsubscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     sub_id = int(cb.data.split("|", 1)[1])
     storage.remove(conn, cb.message.chat.id, sub_id)
-    await cb.answer("Отписал")
-    await cb.message.edit_text("Отписка выполнена. /list — что осталось.")
+    await cb.answer("Больше не слежу")
+    await cb.message.edit_text("Готово, за этим рейсом больше не слежу. Остальные: /list")
 
 
 @router.message(F.chat.type == "private")   # в группе посторонний текст не наш
 async def fallback(message: Message) -> None:
-    await message.answer("Не похоже на номер рейса. " + HELP)
+    await message.answer("Не узнал номер рейса. Он выглядит так: SU2128 или EK 770.\n\n" + HELP)
