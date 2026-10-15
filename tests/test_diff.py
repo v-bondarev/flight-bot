@@ -1,4 +1,6 @@
 """Диффер: структурные изменения рейса → строки для пуша."""
+import dataclasses
+
 from flight_bot.diff import diff_snapshots
 from flight_bot.models import Boarding, Checkin, FlightSnapshot, Leg
 
@@ -72,13 +74,23 @@ def test_cancellation_is_the_only_message():
         "❌ Рейс отменён. Уточни варианты у авиакомпании, а я больше за ним не слежу."]
 
 
-def test_status_phase_change_only_when_nothing_else_and_no_digits():
+def test_status_phase_change_only_without_events_and_no_digits():
     assert diff_snapshots(_snap(status="Идёт регистрация"), _snap(status="Идёт посадка")) == ["ℹ️ Идёт посадка"]
     # статус с временем (SVO) — молчим
     assert diff_snapshots(_snap(status="Регистрация в 18:25"), _snap(status="Регистрация в 18:30")) == []
-    # есть структурное изменение — статус не дублируем
-    assert diff_snapshots(_snap(status="Ожидается", gate="1"),
-                          _snap(status="Идёт посадка", gate="2")) == ["🚪 Новый выход на посадку в SVO: 2 (был 1)"]
+    # событие хронологии уже сказало то же самое — статус не дублируем
+    assert diff_snapshots(_snap(status="Ожидается"),
+                          _snap(status="Идёт посадка", boarding=Boarding(start_fact=DEP))) \
+        == ["🚶 Началась посадка. Пора к выходу!"]
+
+
+def test_status_phase_not_lost_when_gate_appears_in_same_poll():
+    """DME: «Регистрация закрыта» и выход появляются в бегущей строке одним опросом —
+    смена выхода не должна глушить смену фазы, у DME других сигналов фазы нет."""
+    prev = _snap(status="Регистрация в 20:10 на стойках 215-223")
+    curr = _snap(status="Регистрация закрыта", gate="E14")
+    assert diff_snapshots(prev, curr) == ["🚪 Назначен выход на посадку в SVO: E14",
+                                          "ℹ️ Регистрация закрыта"]
 
 
 def test_chronology_before_tiles():
@@ -154,3 +166,61 @@ def test_boarding_finished_and_checkin_closed():
 def test_belt_and_first_terminal():
     assert diff_snapshots(_snap(), _snap(baggage_belt="5", terminal="C")) == [
         "🏢 Назначен терминал C", "🧳 Багаж выдадут на ленте 5"]
+
+
+def test_desks_assigned_and_changed():
+    """DME: стойки появляются в бегущей строке за часы до регистрации — об этом пуш."""
+    before = _snap(status="Регистрация в 20:10")
+    desks = _snap(status="Регистрация в 20:10 на стойках 215-223",
+                  checkin=Checkin(desks="215-223"))
+    assert diff_snapshots(before, desks) == ["🛎 Назначены стойки регистрации в SVO: 215-223"]
+    moved = _snap(checkin=Checkin(desks="301,302"))
+    assert diff_snapshots(desks, moved) == ["🛎 Сменились стойки регистрации в SVO: 301, 302 (были 215-223)"]
+
+
+def test_desks_not_repeated_with_checkin_start_or_after_it():
+    opened = _snap(checkin=Checkin(desks="215-223", start_fact=DEP))
+    assert diff_snapshots(_snap(), opened) == ["🛎 Началась регистрация: стойки 215-223"]
+    closed = _snap(checkin=Checkin(desks="", start_fact=DEP, finish_fact=DEP))
+    assert diff_snapshots(closed, dataclasses.replace(closed, checkin=dataclasses.replace(
+        closed.checkin, desks="1"))) == []
+
+
+def test_desks_from_other_source_not_compared():
+    a = _snap(checkin=Checkin(desks="215-223"), source="dme.ru")
+    b = _snap(checkin=Checkin(desks="1-5"), source="airlabs.co")
+    assert diff_snapshots(a, b) == []
+
+
+
+def test_checkin_plan_moved():
+    a = _snap(checkin=Checkin(start_plan="2026-09-05T21:25:00+03:00"))
+    b = _snap(checkin=Checkin(start_plan="2026-09-05T21:55:00+03:00"))
+    assert diff_snapshots(a, b) == ["🛎 Регистрация переносится: теперь с 21:55, было 21:25"]
+    # мелкий сдвиг и уже открытая регистрация — молчим
+    near = _snap(checkin=Checkin(start_plan="2026-09-05T21:27:00+03:00"))
+    assert diff_snapshots(a, near) == []
+    opened = dataclasses.replace(b, checkin=dataclasses.replace(b.checkin, start_fact=DEP))
+    assert diff_snapshots(opened, dataclasses.replace(opened, checkin=dataclasses.replace(
+        opened.checkin, start_plan="2026-09-05T22:30:00+03:00"))) == []
+
+
+def test_boarding_plan_moved_but_not_with_delay():
+    a = _snap(boarding=Boarding(start_min="40"))          # 23:45
+    b = _snap(boarding=Boarding(start_min="60"))          # 23:25
+    assert diff_snapshots(a, b) == ["🚶 Посадка переносится: теперь с 23:25, было 23:45"]
+    # задержка вылета: «посадка за N мин» у LED/VKO уезжает вместе с вылетом — пушем о задержке хватит
+    late = _snap(departure=Leg(plan=DEP, est="2026-09-06T01:25:00+03:00"), boarding=Boarding(start_min="40"))
+    assert diff_snapshots(a, late) == ["⏱ Вылет позже на 60 мин: теперь 01:25, было 00:25"]
+
+
+def test_aircraft_and_zone_changed():
+    a = _snap(aircraft="Airbus 380-800", zone="E")
+    b = _snap(aircraft="Boeing 777-300ER", zone="D")
+    assert diff_snapshots(a, b) == ["🛩 Замена самолёта: теперь Boeing 777-300ER, был Airbus 380-800",
+                                    "🏢 Сменилась зона вылета: теперь D, была E"]
+    # появилось или пропало (Detailed DME не ответил) — не замена
+    assert diff_snapshots(_snap(), a) == [] and diff_snapshots(a, _snap()) == []
+    # разные источники называют самолёт по-разному («A388») — не сравниваем
+    assert diff_snapshots(dataclasses.replace(a, source="dme.ru"),
+                          dataclasses.replace(a, aircraft="A388", source="airlabs.co")) == []
