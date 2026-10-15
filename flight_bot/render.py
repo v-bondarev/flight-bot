@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from flight_bot.diff import with_msk
+from flight_bot.icons import ic
 from flight_bot.models import FlightSnapshot, Leg, is_cancelled
 
 MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля",
@@ -77,17 +78,17 @@ def route_line(s: FlightSnapshot) -> str:
 
 def _dot(s: FlightSnapshot) -> str:
     if is_cancelled(s):
-        return "✕"
+        return ic("status-cancelled")
     if s.arrival.fact:
-        return "✓"
+        return ic("status-arrived")
     leg = s.arrival if s.direction == "arrival" else s.departure
     if leg.est and leg.est != leg.plan:
-        return "◷"                                   # задержка важнее прочего
+        return ic("status-delay")                                   # задержка важнее прочего
     if s.departure.fact:
-        return "⇗"                                   # уже в воздухе
+        return ic("status-airborne")                                   # уже в воздухе
     if s.direction != "arrival" and s.checkin.start_fact and not s.checkin.finish_fact:
-        return "●"                                   # регистрация идёт
-    return "○"
+        return ic("status-checkin")                                   # регистрация идёт
+    return ic("status-planned")
 
 
 def countdown(s: FlightSnapshot, now: datetime) -> str:
@@ -152,14 +153,16 @@ def _tiles_departure(s: FlightSnapshot, now: datetime) -> List[str]:
 
     term = ["Зона вылета " + _e(s.zone) if s.zone and not s.terminal
             else "Терминал " + (_e(s.terminal) or "—")]
+    if s.zone and s.terminal:
+        term.append("зона вылета " + _e(s.zone))
     if s.gate_terminal and s.gate_terminal != s.terminal:
         term.append("выход в терминале " + _e(s.gate_terminal))
     if s.baggage_belt:
         term.append("лента багажа " + _e(s.baggage_belt))
     return [
-        f"▸ Стойки {_e(_desks(ci.desks))} · {desks_note}",
-        f"▸ Выход {_e(s.gate) or '—'} · {gate_note}",
-        "▸ " + " · ".join(term),
+        f"{ic('checkin-start')} Стойки {_e(_desks(ci.desks))} · {desks_note}",
+        f"{ic('gate-change')} Выход {_e(s.gate) or '—'} · {gate_note}",
+        ic("airport-zone" if s.zone and not s.terminal else "terminal") + " " + " · ".join(term),
     ]
 
 
@@ -169,17 +172,17 @@ def _tiles_arrival(s: FlightSnapshot) -> List[str]:
         belt_note = "багаж здесь" if s.arrival.fact else "подадут сюда"
     else:
         belt_note = "ленту вот-вот объявят" if s.arrival.fact else "появится ближе к прилёту"
-    gate = f"▸ Гейт прилёта {_e(s.gate)}" if s.gate else "▸ Гейт прилёта — · назначат при заходе"
+    gate = f"{ic('gate-change')} Гейт прилёта " + (_e(s.gate) if s.gate else "— · назначат при заходе")
     return [
-        f"▸ Лента багажа {_e(belt) or '—'} · {belt_note}",
+        f"{ic('baggage-claim')} Лента багажа {_e(belt) or '—'} · {belt_note}",
         gate,
-        "▸ Зона прилёта " + _e(s.zone) if s.zone and not s.terminal
-        else "▸ Терминал " + (_e(s.terminal) or "—"),
+        f"{ic('airport-zone')} Зона прилёта " + _e(s.zone) if s.zone and not s.terminal
+        else f"{ic('terminal')} Терминал " + (_e(s.terminal) or "—"),
     ]
 
 
 def _steps(s: FlightSnapshot) -> List[str]:
-    # Одноцветные символы, как в пушах (diff.py): ✓ — уже было, ○ — ещё ждём.
+    # Шаг хронологии: значок «уже было» или «ещё ждём» из пака (icons.py).
     if s.direction == "arrival":
         rows = [
             ("Вылет" + (f" · {_e(s.origin_city)}" if s.origin_city else ""),
@@ -195,7 +198,8 @@ def _steps(s: FlightSnapshot) -> List[str]:
             ("Вылет", s.departure.fact or s.departure.est or s.departure.plan, bool(s.departure.fact)),
             ("Прилёт", s.arrival.fact or s.arrival.est or s.arrival.plan, bool(s.arrival.fact)),
         ]
-    return [f"{'✓' if done else '○'} {k} · {_hhmm(v) or 'ждём табло'}" for k, v, done in rows]
+    return [f"{ic('timeline-done' if done else 'timeline-wait')} {k} · {_hhmm(v) or 'ждём табло'}"
+            for k, v, done in rows]
 
 
 def status_card(s: FlightSnapshot, now: Optional[datetime] = None) -> str:
@@ -204,18 +208,18 @@ def status_card(s: FlightSnapshot, now: Optional[datetime] = None) -> str:
     day = _day(s.departure.plan or s.date)
     lines = [
         "<b>" + head[0] + "</b>" + "".join(f" · {h}" for h in head[1:] if h),
-        f"▸ {day}" if day else None,
+        f"{ic('flight-date')} {day}" if day else None,
         # Города не всегда есть (AirLabs их не отдаёт) — собираем без дыр и хвостов.
-        f"⇗ {' '.join(filter(None, (_e(s.origin_iata), _e(s.origin_city))))} → "
+        f"{ic('flight-route')} {' '.join(filter(None, (_e(s.origin_iata), _e(s.origin_city))))} → "
         f"{' '.join(filter(None, (_e(s.dest_iata), _e(s.dest_city))))}",
-        f"⤷ через {_e(s.via)}" if s.via else None,
-        f"◷ Вылет {_leg_time(s.departure)} · Прилёт {_leg_time(s.arrival)}",
+        f"{ic('stopover')} через {_e(s.via)}" if s.via else None,
+        f"{ic('flight-time')} Вылет {_leg_time(s.departure)} · Прилёт {_leg_time(s.arrival)}",
         "",
         f"{_dot(s)} {_e(s.status.split('~', 1)[0].strip()) or 'Статус не объявлен'}",
     ]
     cd = countdown(s, now)
     if cd:
-        lines.append(f"⧗ {cd}")
+        lines.append(f"{ic('countdown')} {cd}")
     lines.append("")
     lines += _tiles_arrival(s) if s.direction == "arrival" else _tiles_departure(s, now)
     lines += ["", "<b>Хронология</b>"] + _steps(s)
@@ -223,4 +227,4 @@ def status_card(s: FlightSnapshot, now: Optional[datetime] = None) -> str:
 
 
 def update_message(s: FlightSnapshot, changes: List[str]) -> str:
-    return f"<b>{_e(route_line(s))}</b>\n" + "\n".join(changes)
+    return f"{ic('flight-header')} <b>{_e(route_line(s))}</b>\n" + "\n".join(changes)

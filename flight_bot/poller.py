@@ -24,6 +24,7 @@ from typing import Awaitable, Callable, Optional
 from flight_bot import health, registry, storage, watchdog
 from flight_bot.config import Settings
 from flight_bot.diff import diff_snapshots
+from flight_bot.icons import ic
 from flight_bot.models import FlightSnapshot, is_cancelled
 from flight_bot.render import update_message
 
@@ -75,7 +76,7 @@ def expiry_message(row: sqlite3.Row, seen: bool) -> str:
     when = f"{row['date'][8:10]}.{row['date'][5:7]}"
     why = ("прошли сутки, а прилёта на табло так и не было." if seen
            else "рейс так и не появился на табло. Если он ещё нужен, пришли номер заново.")
-    return f"▸ Перестал следить за {row['flight']} {when}: {why}"
+    return f"{ic('tracking-stopped')} Перестал следить за {row['flight']} {when}: {why}"
 
 
 async def _fetch(conn: sqlite3.Connection, row: sqlite3.Row) -> Optional[FlightSnapshot]:

@@ -24,6 +24,7 @@ class Settings:
     render_cache_sec: int       # TTL кэша VKO HTTP-поиска и резервного HTML-рендера
     owner_ids: FrozenSet[int]   # Telegram user id, чьи команды и кнопки бот принимает в группах; пусто — все
     greet_names: Dict[str, str]  # username (без @, нижний регистр) → обращение на «вы» в приветствии
+    emoji_set: str              # пак кастомных эмодзи значков (нужен Premium у владельца); пусто — обычные эмодзи
     airlabs_key_expires: Optional[date] = None  # дата истечения ключа AirLabs (МСК); None — без напоминания
 
 
@@ -90,5 +91,6 @@ def load() -> Settings:
         render_cache_sec=int(os.getenv("RENDER_CACHE_SEC", "75")),
         owner_ids=_owner_ids(os.getenv("OWNER_IDS", "")),
         greet_names=_greet_names(os.getenv("GREET_NAMES", "")),
+        emoji_set=os.getenv("EMOJI_SET", "FlightStatusMinimal"),
         airlabs_key_expires=_date("AIRLABS_KEY_EXPIRES"),
     )

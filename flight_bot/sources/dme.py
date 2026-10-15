@@ -3,8 +3,8 @@
 Поиск по номеру (форма табло):
     GET https://www.dme.ru/book/live-board/?searchText=S7+1055&direction=D|A
 Строка табло: план, факт (класс flightlate/flightcancel), номер, ГОРОД (только
-русским названием, IATA нет), статус-бегущая строка, зона, id. Терминал у DME
-один; «Зона вылета» (E, C…) — сектор выходов, его в terminal не кладём.
+русским названием, IATA нет), статус-бегущая строка, зона, id. Терминал табло
+не отдаёт, только «Зону вылета»: по ней и ставим терминал (TERMINAL_BY_ZONE).
 Бегущая строка статуса (<li>) несёт стойки, время регистрации, выход и начало
 посадки: «Регистрация в 20:10 на стойках 215-223», «Выход E14», «Начало посадки в 22:04».
 Детали по id (другой конец маршрута, тип ВС, факты):
@@ -32,6 +32,9 @@ MSK = timezone(timedelta(hours=3))
 MONTHS = {"янв": 1, "фев": 2, "мар": 3, "апр": 4, "мая": 5, "май": 5, "июн": 6,
           "июл": 7, "авг": 8, "сен": 9, "окт": 10, "ноя": 11, "дек": 12}
 DIRECTION_PARAM = {"departure": "D", "arrival": "A"}
+# Терминал по зоне вылета: E — Т2 (международные с июля 2023), A, C, D, F — Т1.
+# Источник: aeroportoved.ru/moskva/domodedovo/plan-dme/ (обновлено 02.2024), vc.ru (03.2026).
+TERMINAL_BY_ZONE = {"E": "2", "A": "1", "C": "1", "D": "1", "F": "1"}
 
 _ROW_RE = re.compile(r"<tr[^>]*>.*?</tr>", re.S)
 _TD_RE = re.compile(r"<td\b([^>]*)>(.*?)</td>", re.S)
@@ -171,6 +174,8 @@ def build(row: Dict, det: Dict, direction: str) -> FlightSnapshot:
         departure=departure, arrival=arrival,
         airline=row["airline"], origin_city=origin_city, dest_city=dest_city,
         aircraft=det.get("aircraft", ""), zone=row["zone"],
+        # Зона прилёта — другое дело: её в терминал не переводим, не зная схемы.
+        terminal=TERMINAL_BY_ZONE.get(row["zone"].upper(), "") if direction == "departure" else "",
         checkin=Checkin(desks=tick.get("desks", ""), start_plan=tick.get("checkin")),
         boarding=Boarding(start_min=tick.get("boarding_min", "")),
         gate=tick.get("gate", ""),

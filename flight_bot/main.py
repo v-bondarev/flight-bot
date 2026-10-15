@@ -16,7 +16,7 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramMigrateToChat
 
 from flight_bot import bot as handlers
-from flight_bot import config, health, poller, registry, storage
+from flight_bot import config, health, icons, poller, registry, storage
 from flight_bot.http import redact
 
 log = logging.getLogger("flight_bot")
@@ -53,6 +53,19 @@ def make_send(tg: Bot, conn: sqlite3.Connection) -> poller.Send:
         log.warning("чат %s недоступен (%s), снял подписок: %d", chat_id, e, off)
 
     return send
+
+
+async def load_icons(tg: Bot, name: str) -> None:
+    """Пак значков по имени → icons. Не загрузился — пуши уходят с обычными эмодзи."""
+    if not name:
+        return
+    try:
+        pack = await tg.get_sticker_set(name)
+    except Exception:  # noqa: BLE001 — без пака бот работает, просто с обычными эмодзи
+        log.warning("пак эмодзи %s не загрузился — пишу обычные эмодзи", name, exc_info=True)
+        return
+    if icons.load([s.custom_emoji_id or "" for s in pack.stickers]):
+        log.info("пак эмодзи %s: %d значков", name, len(pack.stickers))
 
 
 class _RedactingFormatter(logging.Formatter):
@@ -104,6 +117,7 @@ async def main() -> None:
     background = set()  # держим ссылку, чтобы задачу не собрал GC
 
     async def on_startup() -> None:
+        await load_icons(tg, settings.emoji_set)
         background.add(asyncio.create_task(poller.run(conn, settings, send)))
         log.info("поллер запущен, интервал %ds", settings.poll_interval_sec)
 

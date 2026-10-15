@@ -34,23 +34,23 @@ def _su5822(**kw) -> FlightSnapshot:
 def test_departure_card_matches_page():
     assert status_card(_su5822(), NOW) == (
         "<b>SU5822</b> · Аэрофлот · Airbus A330\n"
-        "▸ 16 августа\n"
-        "⇗ SVO Москва → UUS Южно-Сахалинск\n"
-        "◷ Вылет 23:25 · Прилёт 08:00\n"
+        "📅 16 августа\n"
+        "✈️ SVO Москва → UUS Южно-Сахалинск\n"
+        "🕒 Вылет 23:25 · Прилёт 08:00\n"
         "\n"
-        "● Регистрация идет\n"
-        "⧗ До вылета 2 ч 10 мин\n"
+        "🛎️ Регистрация идет\n"
+        "⌛ До вылета 2 ч 10 мин\n"
         "\n"
-        "▸ Стойки 312, 314-316, 319-346, 355-364 · идёт до 22:45\n"
-        "▸ Выход 101 · изменён, был <s>114</s>\n"
-        "▸ Терминал B · лента багажа B2\n"
+        "🛎️ Стойки 312, 314-316, 319-346, 355-364 · идёт до 22:45\n"
+        "🚪 Выход 101 · изменён, был <s>114</s>\n"
+        "🏢 Терминал B · лента багажа B2\n"
         "\n"
         "<b>Хронология</b>\n"
-        "✓ Регистрация · 17:26\n"
-        "○ Регистрация закрыта · 22:45\n"
-        "○ Посадка · ждём табло\n"
-        "○ Вылет · 23:25\n"
-        "○ Прилёт · 08:00"
+        "✅ Регистрация · 17:26\n"
+        "⚪ Регистрация закрыта · 22:45\n"
+        "⚪ Посадка · ждём табло\n"
+        "⚪ Вылет · 23:25\n"
+        "⚪ Прилёт · 08:00"
     )
 
 
@@ -59,7 +59,7 @@ def test_delay_strikes_plan_and_turns_yellow():
                               est="2026-08-17T00:10:00+03:00"))
     card = status_card(s, NOW)
     assert "Вылет <s>23:25</s> 00:10 · Прилёт 08:00" in card
-    assert "◷ Регистрация идет" in card
+    assert "🕒 Регистрация идет" in card
     assert "До вылета 2 ч 55 мин" in card          # отсчёт по оценке, не по плану
 
 
@@ -71,15 +71,15 @@ def test_arrival_card_has_belt_and_two_steps():
                               fact="2026-08-16T23:30:00+03:00"),
                 arrival=Leg(plan="2026-08-17T08:00:00+03:00"))
     card = status_card(s, datetime(2026, 8, 17, 6, 0, tzinfo=MSK))
-    assert "⇗ Ожидается\n⧗ В пути, до прилёта 2 ч\n" in card
-    assert "▸ Лента багажа — · появится ближе к прилёту\n" in card
-    assert "▸ Гейт прилёта — · назначат при заходе\n" in card
-    assert card.endswith("✓ Вылет · Южно-Сахалинск · 23:30\n○ Прилёт · 08:00")
+    assert "✈️ Ожидается\n⌛ В пути, до прилёта 2 ч\n" in card
+    assert "🧳 Лента багажа — · появится ближе к прилёту\n" in card
+    assert "🚪 Гейт прилёта — · назначат при заходе\n" in card
+    assert card.endswith("✅ Вылет · Южно-Сахалинск · 23:30\n⚪ Прилёт · 08:00")
 
 
 def test_via_line_for_multi_stop_flight():
     card = status_card(_su5822(dest_iata="BAH", dest_city="Бахрейн", via="TBS Тбилиси"), NOW)
-    assert "⇗ SVO Москва → BAH Бахрейн\n⤷ через TBS Тбилиси\n◷ Вылет 23:25" in card
+    assert "✈️ SVO Москва → BAH Бахрейн\n🗺️ через TBS Тбилиси\n🕒 Вылет 23:25" in card
     assert "через" not in status_card(_su5822(), NOW)
 
 
@@ -89,15 +89,15 @@ def test_update_message_format():
                    departure=Leg(plan="2026-08-16T23:25:00+03:00",
                                  est="2026-08-16T23:55:00+03:00"))
     assert update_message(curr, diff_snapshots(prev, curr)) == (
-        "<b>SU5822 · Москва → Южно-Сахалинск · 16 августа</b>\n"
-        "◷ Вылет позже на 30 мин: теперь 23:55, было 23:25\n"
-        "⇄ Новый выход на посадку в SVO: 103 (был 101)"
+        "🔔 <b>SU5822 · Москва → Южно-Сахалинск · 16 августа</b>\n"
+        "🕒 Вылет позже на 30 мин: теперь 23:55, было 23:25\n"
+        "🚪 Новый выход на посадку в SVO: 103 (был 101)"
     )
 
 
 def test_update_message_header_falls_back_to_codes():
     s = _su5822(origin_city="", dest_city="")
-    assert update_message(s, ["x"]).startswith("<b>SU5822 · SVO → UUS · 16 августа</b>\n")
+    assert update_message(s, ["x"]).startswith("🔔 <b>SU5822 · SVO → UUS · 16 августа</b>\n")
 
 
 def test_countdown_without_offset_is_not_guessed():
@@ -111,7 +111,12 @@ def test_countdown_without_offset_is_not_guessed():
 def test_zone_shown_instead_of_terminal_when_no_terminal():
     s = _su5822(terminal="", zone="E")
     card = status_card(s, NOW)
-    assert "▸ Зона вылета E" in card and "Терминал" not in card
+    assert "📍 Зона вылета E" in card and "Терминал" not in card
+
+
+def test_terminal_with_zone_shows_both():
+    card = status_card(_su5822(terminal="2", zone="E", gate_terminal=""), NOW)
+    assert "🏢 Терминал 2 · зона вылета E" in card
 
 
 def test_checkin_tile_after_planned_start_without_fact():
@@ -134,6 +139,6 @@ def test_non_moscow_times_get_msk_in_brackets():
                        dest_iata="CPT", status="",
                        departure=Leg(plan="2026-10-16T09:10:00+04:00"),
                        arrival=Leg(plan="2026-10-16T16:40:00+02:00"))
-    assert "◷ Вылет 09:10 (08:10 МСК) · Прилёт 16:40 (17:40 МСК)" in status_card(s, NOW)
+    assert "🕒 Вылет 09:10 (08:10 МСК) · Прилёт 16:40 (17:40 МСК)" in status_card(s, NOW)
     moscow = _su5822()
     assert "МСК" not in status_card(moscow, NOW).split("\n")[3]          # московский рейс как был
