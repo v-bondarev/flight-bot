@@ -72,13 +72,23 @@ def test_cancellation_is_the_only_message():
         "❌ Рейс отменён. Уточни варианты у авиакомпании, а я больше за ним не слежу."]
 
 
-def test_status_phase_change_only_when_nothing_else_and_no_digits():
+def test_status_phase_change_only_without_events_and_no_digits():
     assert diff_snapshots(_snap(status="Идёт регистрация"), _snap(status="Идёт посадка")) == ["ℹ️ Идёт посадка"]
     # статус с временем (SVO) — молчим
     assert diff_snapshots(_snap(status="Регистрация в 18:25"), _snap(status="Регистрация в 18:30")) == []
-    # есть структурное изменение — статус не дублируем
-    assert diff_snapshots(_snap(status="Ожидается", gate="1"),
-                          _snap(status="Идёт посадка", gate="2")) == ["🚪 Новый выход на посадку в SVO: 2 (был 1)"]
+    # событие хронологии уже сказало то же самое — статус не дублируем
+    assert diff_snapshots(_snap(status="Ожидается"),
+                          _snap(status="Идёт посадка", boarding=Boarding(start_fact=DEP))) \
+        == ["🚶 Началась посадка. Пора к выходу!"]
+
+
+def test_status_phase_not_lost_when_gate_appears_in_same_poll():
+    """DME: «Регистрация закрыта» и выход появляются в бегущей строке одним опросом —
+    смена выхода не должна глушить смену фазы, у DME других сигналов фазы нет."""
+    prev = _snap(status="Регистрация в 20:10 на стойках 215-223")
+    curr = _snap(status="Регистрация закрыта", gate="E14")
+    assert diff_snapshots(prev, curr) == ["🚪 Назначен выход на посадку в SVO: E14",
+                                          "ℹ️ Регистрация закрыта"]
 
 
 def test_chronology_before_tiles():
