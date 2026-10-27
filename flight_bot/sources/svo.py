@@ -1,7 +1,8 @@
 """Источник: онлайн-табло Шереметьево (SVO).
 
-Публичный Bitrix-JSON под табло:
-    GET https://www.svo.aero/bitrix/timetable/?search=<номер>&direction=<dir>&perPage=50
+Публичный JSON под табло (с 2026-10 — домен svo.su; старый
+www.svo.aero/bitrix/timetable/ отвечает 301 → svo.su/timetable/):
+    GET https://svo.su/timetable/?search=<номер>&direction=<dir>&perPage=50
     → {"items": [ {co:{code}, flt, dat, mar1, mar2, t_st/t_et/..., term, gate_id} ]}
 
 Ключ не нужен, антибота нет. Поиск на стороне табло нестрогий — фильтруем сами.
@@ -15,7 +16,7 @@ from typing import List, Optional
 from flight_bot.models import Boarding, Checkin, FlightSnapshot, Leg
 from flight_bot.sources.base import FlightSource
 
-BASE_URL = "https://www.svo.aero/bitrix/timetable/"
+BASE_URL = "https://svo.su/timetable/"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
@@ -122,7 +123,9 @@ class SvoSource(FlightSource):
             {"search": flight_no, "direction": direction, "perPage": "50"}
         )
         headers = {"Accept": "application/json", "User-Agent": UA}
-        async with httpx.AsyncClient(timeout=self._timeout, headers=headers) as client:
+        # follow_redirects: следующий переезд табло не должен ронять источник (301 → ошибка).
+        async with httpx.AsyncClient(timeout=self._timeout, headers=headers,
+                                     follow_redirects=True) as client:
             resp = await client.get(f"{BASE_URL}?{query}")
             resp.raise_for_status()
             payload = resp.json()
