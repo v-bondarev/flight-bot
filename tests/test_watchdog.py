@@ -8,7 +8,9 @@ from flight_bot import poller, watchdog
 
 
 def test_notify_sends_watchdog_datagram(tmp_path, monkeypatch):
-    path = str(tmp_path / "notify.sock")
+    # Относительное имя: путь AF_UNIX ограничен ~104 байтами, а tmp_path на macOS длинный.
+    monkeypatch.chdir(tmp_path)
+    path = "notify.sock"
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     srv.bind(path)
     srv.settimeout(1)
