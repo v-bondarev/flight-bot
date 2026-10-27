@@ -86,3 +86,48 @@ def test_parse_filters_by_exact_number():
 
 def test_parse_normalises_spacing_and_case():
     assert svo.parse(_payload(), "su 2128", "departure")
+
+
+def test_fetch_uses_new_domain_and_follows_redirects():
+    """С 2026-10 табло переехало: www.svo.aero/bitrix/timetable → 301 → svo.su/timetable."""
+    import asyncio
+
+    import httpx
+
+    from flight_bot.sources import svo
+
+    payload = _payload()
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if request.url.host != "svo.su" or request.url.path != "/timetable/":
+            new = request.url.copy_with(host="svo.su", path="/timetable/")
+            return httpx.Response(301, headers={"Location": str(new)})
+        return httpx.Response(200, json=payload)
+
+    real = httpx.AsyncClient
+    real_init = real.__init__
+
+    def init(self, *a, **kw):
+        real_init(self, *a, transport=httpx.MockTransport(handler), **kw)
+    import pytest
+    mp = pytest.MonkeyPatch()
+    mp.setattr(real, "__init__", init)
+    try:
+        snaps = asyncio.run(svo.SvoSource().fetch("SU2128"))
+    finally:
+        mp.undo()
+    assert seen[0].startswith("https://svo.su/timetable/?")      # сразу новый адрес
+    assert snaps and snaps[0].flight.replace(" ", "") == "SU2128"
+
+    # старый адрес в константе — всё равно дойдём по редиректам
+    mp = pytest.MonkeyPatch()
+    mp.setattr(real, "__init__", init)
+    mp.setattr(svo, "BASE_URL", "https://www.svo.aero/bitrix/timetable/")
+    try:
+        seen.clear()
+        assert asyncio.run(svo.SvoSource().fetch("SU2128"))
+    finally:
+        mp.undo()
+    assert seen[-1].startswith("https://svo.su/timetable/?") and len(seen) == 2
