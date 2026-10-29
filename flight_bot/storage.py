@@ -43,6 +43,34 @@ CREATE TABLE IF NOT EXISTS reminders (       -- когда последний р
     name TEXT PRIMARY KEY,
     day  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS external_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flight TEXT NOT NULL,
+    date TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    last_json TEXT,
+    next_at INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE(flight, date, direction)
+);
+CREATE TABLE IF NOT EXISTS external_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    acknowledged_at TEXT,
+    FOREIGN KEY(track_id) REFERENCES external_tracks(id)
+);
+CREATE TABLE IF NOT EXISTS flight_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    flight TEXT NOT NULL,
+    date TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    expires_at INTEGER NOT NULL
+);
 """
 
 # Колонки, добавленные после первого релиза: CREATE IF NOT EXISTS их в живую
@@ -228,3 +256,118 @@ def set_reminder_day(conn: sqlite3.Connection, name: str, day: str) -> None:
     conn.execute("INSERT INTO reminders (name, day) VALUES (?, ?) "
                  "ON CONFLICT(name) DO UPDATE SET day=excluded.day", (name, day))
     conn.commit()
+
+
+def add_external_track(conn: sqlite3.Connection, flight: str, day: str,
+                       direction: str, source: str,
+                       snapshot: Optional[FlightSnapshot]) -> sqlite3.Row:
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO external_tracks
+           (flight, date, direction, source, active, last_json, next_at, created_at)
+           VALUES (?, ?, ?, ?, 1, ?, 0, ?)
+           ON CONFLICT(flight, date, direction) DO UPDATE SET
+             active=1, source=excluded.source, last_json=excluded.last_json, next_at=0""",
+        (flight.upper(), day, direction, source,
+         json.dumps(snap_to_dict(snapshot), ensure_ascii=False) if snapshot else None, now),
+    )
+    conn.commit()
+    return conn.execute(
+        "SELECT * FROM external_tracks WHERE flight=? AND date=? AND direction=?",
+        (flight.upper(), day, direction),
+    ).fetchone()
+
+
+def save_flight_candidates(conn: sqlite3.Connection, flight: str,
+                           candidates: List[FlightSnapshot], expires_at: int) -> List[dict]:
+    import secrets
+
+    now = int(time.time())
+    conn.execute("DELETE FROM flight_candidates WHERE expires_at<=?", (now,))
+    saved = []
+    for snap in candidates:
+        candidate_id = secrets.token_urlsafe(18)
+        conn.execute(
+            """INSERT INTO flight_candidates
+               (candidate_id, flight, date, direction, source, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (candidate_id, flight.upper(), snap.date, snap.direction, snap.source, expires_at),
+        )
+        saved.append({"candidate_id": candidate_id, "snapshot": snap})
+    conn.commit()
+    return saved
+
+
+def get_flight_candidate(conn: sqlite3.Connection, candidate_id: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM flight_candidates WHERE candidate_id=? AND expires_at>?",
+        (candidate_id, int(time.time())),
+    ).fetchone()
+
+
+def list_external_tracks(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM external_tracks WHERE active=1 ORDER BY date, flight"
+    ).fetchall()
+
+
+def remove_external_track(conn: sqlite3.Connection, track_id: int) -> bool:
+    cur = conn.execute("UPDATE external_tracks SET active=0 WHERE id=? AND active=1", (track_id,))
+    if cur.rowcount:
+        conn.execute(
+            "UPDATE external_events SET acknowledged_at=? WHERE track_id=? AND acknowledged_at IS NULL",
+            (datetime.now(timezone.utc).isoformat(), track_id),
+        )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def due_external_tracks(conn: sqlite3.Connection, now_epoch: int) -> List[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM external_tracks WHERE active=1 AND next_at<=?", (now_epoch,)
+    ).fetchall()
+
+
+def get_external_last(row: sqlite3.Row) -> Optional[FlightSnapshot]:
+    return snap_from_dict(json.loads(row["last_json"])) if row["last_json"] else None
+
+
+def update_external_track(conn: sqlite3.Connection, track_id: int,
+                          snapshot: Optional[FlightSnapshot], next_at: int,
+                          deactivate: bool = False) -> None:
+    if snapshot is None:
+        conn.execute(
+            "UPDATE external_tracks SET next_at=?, active=CASE WHEN ? THEN 0 ELSE active END WHERE id=?",
+            (next_at, int(deactivate), track_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE external_tracks SET last_json=?, next_at=?, active=CASE WHEN ? THEN 0 ELSE active END WHERE id=?",
+            (json.dumps(snap_to_dict(snapshot), ensure_ascii=False),
+             next_at, int(deactivate), track_id),
+        )
+    conn.commit()
+
+
+def add_external_event(conn: sqlite3.Connection, track_id: int, body: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO external_events (track_id, body, created_at) VALUES (?, ?, ?)",
+        (track_id, body, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def pending_external_events(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM external_events WHERE acknowledged_at IS NULL ORDER BY id LIMIT 100"
+    ).fetchall()
+
+
+def acknowledge_external_event(conn: sqlite3.Connection, event_id: int) -> bool:
+    cur = conn.execute(
+        "UPDATE external_events SET acknowledged_at=? WHERE id=? AND acknowledged_at IS NULL",
+        (datetime.now(timezone.utc).isoformat(), event_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0

@@ -4,6 +4,16 @@ Telegram-бот подписки на статус авиарейсов. На в
 дату, дальше шлёт все изменения (задержка, смена терминала/выхода, вылет,
 прилёт, отмена) до завершения рейса.
 
+## Personal Hub bridge
+
+The local implementation adds an authenticated API for the Personal Hub flight
+assistant. It is designed to bind only to Riga's loopback interface and to be
+reached from the Mac through an SSH local forward. Tracks and queued changes use
+separate SQLite tables, so this API does not alter the existing Telegram
+subscription behavior. Tracking accepts only a candidate ID from a search made
+within the previous hour. The service is not installed or enabled on Riga yet;
+see [ADR-0007](docs/adr/0007-personal-hub-bridge.md).
+
 ## Данные (РФ): бесплатно, платное — план B
 
 По РФ глобальные ADS-B-трекеры (FR24/OpenSky/FlightAware) над страной рваные —
