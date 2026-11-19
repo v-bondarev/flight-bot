@@ -43,6 +43,44 @@ CREATE TABLE IF NOT EXISTS reminders (       -- когда последний р
     name TEXT PRIMARY KEY,
     day  TEXT NOT NULL
 );
+
+-- Ограничения аэропортов (Росавиация, БПЛА). Посты — сырьё, события — разбор,
+-- state — текущий режим, alerts_sent — дедуп отправок.
+CREATE TABLE IF NOT EXISTS airport_posts (
+    post_id      INTEGER PRIMARY KEY,
+    at           TEXT NOT NULL,          -- ISO, UTC
+    text_hash    TEXT NOT NULL,          -- ловим правки поста
+    reply_to     INTEGER,
+    processed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS airport_events (
+    post_id INTEGER NOT NULL,
+    iata    TEXT    NOT NULL,
+    kind    TEXT    NOT NULL,            -- closed | partial | lifted
+    at      TEXT    NOT NULL,
+    episode INTEGER,                     -- id поста введения, для lifted
+    PRIMARY KEY (post_id, iata, kind)
+);
+CREATE TABLE IF NOT EXISTS airport_state (
+    iata       TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL,            -- closed | partial | open
+    since      TEXT NOT NULL,
+    post_id    INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS airport_alerts_sent (
+    chat_id INTEGER NOT NULL,
+    sub_id  INTEGER NOT NULL,
+    iata    TEXT    NOT NULL,
+    post_id INTEGER NOT NULL,            -- id эпизода = пост введения
+    kind    TEXT    NOT NULL,            -- closed | partial | lifted | suppressed
+    sent_at TEXT    NOT NULL,
+    PRIMARY KEY (chat_id, sub_id, iata, post_id, kind)
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 # Колонки, добавленные после первого релиза: CREATE IF NOT EXISTS их в живую
@@ -50,6 +88,8 @@ CREATE TABLE IF NOT EXISTS reminders (       -- когда последний р
 _MIGRATIONS = {
     "source": "ALTER TABLE subscriptions ADD COLUMN source TEXT NOT NULL DEFAULT ''",
     "thread_id": "ALTER TABLE subscriptions ADD COLUMN thread_id INTEGER",
+    "origin_iata": "ALTER TABLE subscriptions ADD COLUMN origin_iata TEXT NOT NULL DEFAULT ''",
+    "dest_iata": "ALTER TABLE subscriptions ADD COLUMN dest_iata TEXT NOT NULL DEFAULT ''",
 }
 
 
@@ -68,18 +108,28 @@ def connect(path: str) -> sqlite3.Connection:
 
 def add(conn: sqlite3.Connection, chat_id: int, flight: str, date: str,
         direction: str = "departure", source: str = "",
-        thread_id: Optional[int] = None) -> int:
+        thread_id: Optional[int] = None,
+        origin_iata: str = "", dest_iata: str = "") -> int:
     """Подписать (или реактивировать, если та же уже была). Возвращает id.
     Повторная подписка переносит пуши в тему, откуда подписались последний раз,
     и опрашивается сразу: старый next_at (до часа) оживлённой строке не нужен."""
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
-        """INSERT INTO subscriptions (chat_id, flight, date, direction, active, created_at, source, thread_id)
-           VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+        """INSERT INTO subscriptions
+               (chat_id, flight, date, direction, active, created_at, source,
+                thread_id, origin_iata, dest_iata)
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
            ON CONFLICT(chat_id, flight, date)
            DO UPDATE SET active=1, direction=excluded.direction, source=excluded.source,
-                         thread_id=excluded.thread_id, next_at=0""",
-        (chat_id, flight.upper(), date, direction, now, source, thread_id),
+                         thread_id=excluded.thread_id, next_at=0,
+                         origin_iata=CASE WHEN excluded.origin_iata<>''
+                                          THEN excluded.origin_iata
+                                          ELSE subscriptions.origin_iata END,
+                         dest_iata=CASE WHEN excluded.dest_iata<>''
+                                        THEN excluded.dest_iata
+                                        ELSE subscriptions.dest_iata END""",
+        (chat_id, flight.upper(), date, direction, now, source, thread_id,
+         (origin_iata or "").upper(), (dest_iata or "").upper()),
     )
     conn.commit()
     row = conn.execute(
@@ -179,10 +229,36 @@ def get_last(conn: sqlite3.Connection, sub_id: int) -> Optional[FlightSnapshot]:
 
 def set_last(conn: sqlite3.Connection, sub_id: int, snap: FlightSnapshot) -> None:
     conn.execute(
-        "UPDATE subscriptions SET last_json=? WHERE id=?",
-        (json.dumps(snap_to_dict(snap), ensure_ascii=False), sub_id),
+        """UPDATE subscriptions
+              SET last_json=?,
+                  origin_iata=COALESCE(NULLIF(?, ''), origin_iata),
+                  dest_iata=COALESCE(NULLIF(?, ''), dest_iata)
+            WHERE id=?""",
+        (json.dumps(snap_to_dict(snap), ensure_ascii=False),
+         (snap.origin_iata or "").upper(), (snap.dest_iata or "").upper(), sub_id),
     )
     conn.commit()
+
+
+def set_route(conn: sqlite3.Connection, sub_id: int,
+              origin_iata: str, dest_iata: str) -> None:
+    conn.execute(
+        """UPDATE subscriptions
+              SET origin_iata=COALESCE(NULLIF(?, ''), origin_iata),
+                  dest_iata=COALESCE(NULLIF(?, ''), dest_iata)
+            WHERE id=?""",
+        ((origin_iata or "").upper(), (dest_iata or "").upper(), sub_id),
+    )
+    conn.commit()
+
+
+def subs_for_airport(conn: sqlite3.Connection, iata: str) -> List[sqlite3.Row]:
+    """Активные подписки, у которых этот аэропорт — вылет или прилёт."""
+    return conn.execute(
+        """SELECT * FROM subscriptions
+            WHERE active=1 AND (origin_iata=? OR dest_iata=?)""",
+        ((iata or "").upper(), (iata or "").upper()),
+    ).fetchall()
 
 
 def spend_schedule_call(conn: sqlite3.Connection, limit: int, window_sec: int,
@@ -227,4 +303,103 @@ def reminder_day(conn: sqlite3.Connection, name: str) -> Optional[str]:
 def set_reminder_day(conn: sqlite3.Connection, name: str, day: str) -> None:
     conn.execute("INSERT INTO reminders (name, day) VALUES (?, ?) "
                  "ON CONFLICT(name) DO UPDATE SET day=excluded.day", (name, day))
+    conn.commit()
+
+
+# --- Ограничения аэропортов -------------------------------------------------
+
+def meta_get(conn: sqlite3.Connection, key: str) -> Optional[str]:
+    row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def meta_set(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, str(value)),
+    )
+    conn.commit()
+
+
+def past_hash(conn: sqlite3.Connection, post_id: int) -> Optional[str]:
+    row = conn.execute(
+        "SELECT text_hash FROM airport_posts WHERE post_id=?", (post_id,)
+    ).fetchone()
+    return row["text_hash"] if row else None
+
+
+def save_post(conn: sqlite3.Connection, post_id: int, at: str, text_hash: str,
+              reply_to: Optional[int], processed_at: str) -> None:
+    conn.execute(
+        """INSERT INTO airport_posts (post_id, at, text_hash, reply_to, processed_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(post_id) DO UPDATE SET
+               at=excluded.at, text_hash=excluded.text_hash,
+               reply_to=excluded.reply_to, processed_at=excluded.processed_at""",
+        (post_id, at, text_hash, reply_to, processed_at),
+    )
+    conn.commit()
+
+
+def replace_events(conn: sqlite3.Connection, post_id: int, events: list) -> None:
+    """Пересобрать события поста: правки поста меняют и разбор."""
+    conn.execute("DELETE FROM airport_events WHERE post_id=?", (post_id,))
+    conn.executemany(
+        "INSERT OR REPLACE INTO airport_events (post_id, iata, kind, at, episode) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [(e.post_id, e.iata, e.kind, e.at, e.episode) for e in events],
+    )
+    conn.commit()
+
+
+def get_state(conn: sqlite3.Connection, iata: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM airport_state WHERE iata=?", (iata,)
+    ).fetchone()
+
+
+def set_state(conn: sqlite3.Connection, iata: str, kind: str, since: str,
+              post_id: int, updated_at: str) -> None:
+    conn.execute(
+        """INSERT INTO airport_state (iata, kind, since, post_id, updated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(iata) DO UPDATE SET
+               kind=excluded.kind, since=excluded.since,
+               post_id=excluded.post_id, updated_at=excluded.updated_at""",
+        (iata, kind, since, post_id, updated_at),
+    )
+    conn.commit()
+
+
+def alert_sent(conn: sqlite3.Connection, chat_id: int, sub_id: int, iata: str,
+               post_id: int, kind: str) -> bool:
+    row = conn.execute(
+        """SELECT 1 FROM airport_alerts_sent
+            WHERE chat_id=? AND sub_id=? AND iata=? AND post_id=? AND kind=?""",
+        (chat_id, sub_id, iata, post_id, kind),
+    ).fetchone()
+    return row is not None
+
+
+def alert_sent_any(conn: sqlite3.Connection, chat_id: int, sub_id: int, iata: str,
+                   post_id: int, kinds: tuple) -> bool:
+    marks = ",".join("?" for _ in kinds)
+    row = conn.execute(
+        f"""SELECT 1 FROM airport_alerts_sent
+             WHERE chat_id=? AND sub_id=? AND iata=? AND post_id=?
+               AND kind IN ({marks})""",
+        (chat_id, sub_id, iata, post_id, *kinds),
+    ).fetchone()
+    return row is not None
+
+
+def mark_alert(conn: sqlite3.Connection, chat_id: int, sub_id: int, iata: str,
+               post_id: int, kind: str, sent_at: str) -> None:
+    conn.execute(
+        """INSERT OR REPLACE INTO airport_alerts_sent
+               (chat_id, sub_id, iata, post_id, kind, sent_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (chat_id, sub_id, iata, post_id, kind, sent_at),
+    )
     conn.commit()

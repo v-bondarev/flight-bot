@@ -26,6 +26,12 @@ class Settings:
     greet_names: Dict[str, str]  # username (без @, нижний регистр) → обращение на «вы» в приветствии
     emoji_set: str              # пак кастомных эмодзи значков (нужен Premium у владельца); пусто — обычные эмодзи
     airlabs_key_expires: Optional[date] = None  # дата истечения ключа AirLabs (МСК); None — без напоминания
+    airport_alerts: bool = True                 # алерты об ограничениях аэропортов по подпискам
+    airport_alerts_interval_sec: int = 120      # тик наблюдателя Росавиации
+    airport_alert_window_h: int = 12            # за сколько часов до вылета алерт ещё актуален
+    airport_alert_quiet_from: int = 23          # тихие часы: с (МСК)
+    airport_alert_quiet_to: int = 7             # тихие часы: до (МСК)
+    airport_alert_quiet_near_h: int = 6         # в тихие часы будим, если до рейса не больше
 
 
 def load_env(path: str = ".env") -> None:
@@ -93,4 +99,10 @@ def load() -> Settings:
         greet_names=_greet_names(os.getenv("GREET_NAMES", "")),
         emoji_set=os.getenv("EMOJI_SET", "FlightStatusMinimal"),
         airlabs_key_expires=_date("AIRLABS_KEY_EXPIRES"),
+        airport_alerts=os.getenv("AIRPORT_ALERTS", "1").lower() not in ("0", "false", "no", "off"),
+        airport_alerts_interval_sec=int(os.getenv("AIRPORT_ALERTS_INTERVAL_SEC", "120")),
+        airport_alert_window_h=int(os.getenv("AIRPORT_ALERT_WINDOW_H", "12")),
+        airport_alert_quiet_from=int(os.getenv("AIRPORT_ALERT_QUIET_FROM", "23")),
+        airport_alert_quiet_to=int(os.getenv("AIRPORT_ALERT_QUIET_TO", "7")),
+        airport_alert_quiet_near_h=int(os.getenv("AIRPORT_ALERT_QUIET_NEAR_H", "6")),
     )

@@ -171,13 +171,15 @@ async def on_subscribe(cb: CallbackQuery, conn: sqlite3.Connection) -> None:
     # Тема форума — только у сообщения в теме; у ответа в обычной группе
     # message_thread_id тоже есть, но это не тема.
     thread_id = cb.message.message_thread_id if cb.message.is_topic_message else None
-    storage.add(conn, cb.message.chat.id, flight, date, direction, source, thread_id)
+    sub_id = storage.add(conn, cb.message.chat.id, flight, date, direction, source, thread_id)
     # Часики гасим сразу: табло через scrape.do отвечает до минуты, Telegram
     # ждёт ответа на callback ~30 с, и зависшая кнопка нажимается повторно.
     await cb.answer()
     when = f"{date[8:10]}.{date[5:7]}"
     await cb.message.edit_text(f"⏳ Начинаю следить за {flight} {when}, смотрю табло…")
     snap = await registry.fetch_for(flight, date, direction, prefer=source)
+    if snap:
+        storage.set_route(conn, sub_id, snap.origin_iata, snap.dest_iata)
     planned = None if snap else registry.scheduled(flight, date)
     if snap:
         text = "✅ Готово! Напишу, как только что-то изменится. Сейчас так:\n\n" + status_card(snap)

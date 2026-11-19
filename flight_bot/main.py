@@ -15,8 +15,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramMigrateToChat
 
+from flight_bot import airport_alerts, config, health, icons, poller, registry, storage
 from flight_bot import bot as handlers
-from flight_bot import config, health, icons, poller, registry, storage
 from flight_bot.http import redact
 
 log = logging.getLogger("flight_bot")
@@ -120,6 +120,8 @@ async def main() -> None:
         await load_icons(tg, settings.emoji_set)
         background.add(asyncio.create_task(poller.run(conn, settings, send)))
         log.info("поллер запущен, интервал %ds", settings.poll_interval_sec)
+        if settings.airport_alerts:
+            background.add(asyncio.create_task(airport_alerts.run(conn, settings, send)))
 
     dp.startup.register(on_startup)
     # conn уходит в workflow-data: хендлеры получают его аргументом.
