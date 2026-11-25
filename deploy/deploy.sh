@@ -8,16 +8,21 @@
 #      В ~/.ssh/authorized_keys одной строкой:
 #        command="/opt/flight-bot/deploy/deploy.sh",restrict ssh-ed25519 AAAA… flight-bot-deploy
 #      Закрытый ключ — в GitHub Secrets (DEPLOY_SSH_KEY) и удалить с сервера.
-#   2. sudo только на рестарт (путь — из `command -v systemctl`):
-#        echo 'vbondarev ALL=(root) NOPASSWD: /usr/bin/systemctl restart flight-bot' \
+#   2. sudo только на рестарт обоих юнитов (путь — из `command -v systemctl`):
+#        printf '%s\n' 'vbondarev ALL=(root) NOPASSWD: /usr/bin/systemctl restart flight-bot' \
+#          'vbondarev ALL=(root) NOPASSWD: /usr/bin/systemctl restart flight-bot-api' \
 #          | sudo tee /etc/sudoers.d/flight-bot-deploy && sudo chmod 440 /etc/sudoers.d/flight-bot-deploy
 #        sudo visudo -cf /etc/sudoers.d/flight-bot-deploy
 #
-# Smoke: через SMOKE_SETTLE_SEC после рестарта сервис active и PID не меняется
+# Перезапускаются бот и loopback API для Personal Hub (flight-bot-api, ADR-0007): оба
+# импортируют flight_bot.storage, и API без рестарта держит в памяти старый код.
+# Smoke: через SMOKE_SETTLE_SEC после рестарта каждый юнит active и его PID не меняется
 # SMOKE_SEC секунд (Restart=on-failure через RestartSec=10 сменил бы PID).
 # Не прошёл — откат на прежний коммит и рестарт.
 # Вывод уходит в публичный лог Actions: только SHA и состояния, журнал бота не печатаем.
 set -euo pipefail
+
+UNITS=(flight-bot flight-bot-api)
 
 main() {
   local dir="${FLIGHT_BOT_DIR:-/opt/flight-bot}" sha="${SSH_ORIGINAL_COMMAND:-}"
@@ -64,18 +69,26 @@ apply() {
   if ! git diff --quiet "$1" "$2" -- requirements.txt; then
     .venv/bin/pip install -q -r requirements.txt
   fi
-  sudo -n systemctl restart flight-bot
+  local unit
+  for unit in "${UNITS[@]}"; do
+    sudo -n systemctl restart "$unit"
+  done
 }
 
 smoke_ok() {
-  local pid i
+  local unit i
+  local -A pid=()
   sleep "${SMOKE_SETTLE_SEC:-2}"
-  pid=$(systemctl show -p MainPID --value flight-bot)
-  [[ $pid != 0 ]] || return 1
+  for unit in "${UNITS[@]}"; do
+    pid[$unit]=$(systemctl show -p MainPID --value "$unit")
+    [[ ${pid[$unit]} != 0 ]] || return 1
+  done
   for ((i = 0; i < $1; i++)); do
     sleep 1
-    systemctl is-active -q flight-bot || return 1
-    [[ $(systemctl show -p MainPID --value flight-bot) == "$pid" ]] || return 1
+    for unit in "${UNITS[@]}"; do
+      systemctl is-active -q "$unit" || return 1
+      [[ $(systemctl show -p MainPID --value "$unit") == "${pid[$unit]}" ]] || return 1
+    done
   done
 }
 

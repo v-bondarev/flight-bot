@@ -275,12 +275,13 @@ sudo systemctl daemon-reload && sudo systemctl enable --now flight-bot
 
 Обновление — автоматически: пуш в `main` с зелёными тестами выкатывает job `deploy`
 (`.github/workflows/tests.yml`) по SSH через `deploy/deploy.sh`: fast-forward на этот
-коммит, `pip install` при смене `requirements.txt`, рестарт, 30 с проверки, что сервис
-не перезапускается; не держится — откат на прежний коммит (ADR-0005). Установка ключа и
+коммит, `pip install` при смене `requirements.txt`, рестарт `flight-bot` и
+`flight-bot-api`, 30 с проверки, что оба сервиса не перезапускаются; не держится —
+откат на прежний коммит (ADR-0005). Установка ключа и
 sudoers — в заголовке `deploy/deploy.sh`. Секреты репозитория (environment `production`):
 `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan -p <порт> <хост>`), `DEPLOY_TARGET`
 (`vbondarev@<хост>`), `DEPLOY_PORT` (пусто — 22). Вручную — как раньше:
-`git pull && sudo systemctl restart flight-bot`. Юниты в `deploy/` выкатка не
+`git pull && sudo systemctl restart flight-bot flight-bot-api`. Юниты в `deploy/` выкатка не
 переустанавливает: после их изменения — `sudo cp … /etc/systemd/system/ &&
 sudo systemctl daemon-reload && sudo systemctl restart flight-bot`. В юните
 `WatchdogSec=300`: поллер раз в минуту шлёт `WATCHDOG=1`, зависший процесс
