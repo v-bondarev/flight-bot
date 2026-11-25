@@ -54,6 +54,20 @@ def test_first_poll_silent_then_change_notifies(monkeypatch):
     assert "141 (был 129)" in send.msgs[0][1]
 
 
+def test_external_track_queues_change_for_personal_hub(monkeypatch):
+    conn = storage.connect(":memory:")
+    storage.add_external_track(conn, "SU2128", "2026-09-06", "departure", "svo.su",
+                              _snap(gate="129"))
+    _fixed(_snap(gate="141"), monkeypatch)
+
+    asyncio.run(poller.poll_external_once(conn, NOW))
+
+    events = storage.pending_external_events(conn)
+    assert len(events) == 1
+    assert "141 (был 129)" in events[0]["body"]
+    assert storage.list_external_tracks(conn)[0]["last_json"]
+
+
 def test_push_goes_to_subscription_topic(monkeypatch):
     conn = storage.connect(":memory:")
     storage.add(conn, -1001, "SU2128", "2026-09-06", thread_id=7)

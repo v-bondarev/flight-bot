@@ -112,6 +112,53 @@ async def poll_once(conn: sqlite3.Connection, send: Send,
                 storage.set_next(conn, row["id"], epoch + near)
             except Exception:  # noqa: BLE001 — БД легла: остальные подписки всё равно пробуем
                 log.exception("подписка %s: не записался следующий опрос", row["id"])
+    await poll_external_once(conn, now, near)
+
+
+async def poll_external_once(conn: sqlite3.Connection, now: datetime,
+                             near: int = 300) -> None:
+    """Update Personal Hub tracks and queue change messages without Telegram delivery."""
+    epoch = int(now.timestamp())
+    rows = storage.due_external_tracks(conn, epoch)
+    async def fetch(row: sqlite3.Row) -> Optional[FlightSnapshot]:
+        try:
+            previous = storage.get_external_last(row)
+            return await registry.fetch_for(
+                row["flight"], row["date"], row["direction"],
+                prefer=row["source"], key=previous.key if previous else None,
+            )
+        except Exception:  # noqa: BLE001 — one external track cannot stop other subscriptions
+            log.exception("external tracking %s failed", row["id"])
+            return None
+
+    snaps = await asyncio.gather(*(fetch(row) for row in rows))
+    for row, current in zip(rows, snaps, strict=True):
+        try:
+            if expired(row["date"], now):
+                storage.add_external_event(
+                    conn, row["id"],
+                    f"Перестал следить за {row['flight']} "
+                    f"{row['date'][8:10]}.{row['date'][5:7]}: срок отслеживания завершился.",
+                )
+                storage.update_external_track(conn, row["id"], None, epoch, deactivate=True)
+                continue
+            if current is None:
+                storage.update_external_track(
+                    conn, row["id"], None, wake_at(row["date"], epoch, near)
+                )
+                continue
+            previous = storage.get_external_last(row)
+            if previous is not None:
+                changes = diff_snapshots(previous, current)
+                if changes:
+                    storage.add_external_event(conn, row["id"], update_message(current, changes))
+            finished = bool(current.arrival.fact or is_cancelled(current))
+            storage.update_external_track(
+                conn, row["id"], current,
+                epoch + interval_for(current, now, near), deactivate=finished,
+            )
+        except Exception:  # noqa: BLE001 — retain next tracks after an isolated DB/format failure
+            log.exception("external track %s processing failed", row["id"])
 
 
 async def _handle(conn: sqlite3.Connection, send: Send, row: sqlite3.Row,

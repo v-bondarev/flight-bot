@@ -1,0 +1,23 @@
+[Unit]
+Description=Authenticated loopback API for flight-bot
+After=network-online.target flight-bot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vbondarev
+WorkingDirectory=/opt/flight-bot
+EnvironmentFile=/opt/flight-bot/.env
+Environment=FLIGHT_API_HOST=127.0.0.1
+Environment=FLIGHT_API_PORT=18766
+ExecStart=/opt/flight-bot/.venv/bin/python -m flight_bot.api
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/flight-bot
+
+[Install]
+WantedBy=multi-user.target
