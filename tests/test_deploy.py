@@ -11,14 +11,20 @@ import pytest
 SCRIPT = Path(__file__).resolve().parent.parent / "deploy" / "deploy.sh"
 
 FAKE_SYSTEMCTL = """#!/usr/bin/env bash
-# restart — новый PID; при файле CRASH в рабочей копии PID меняется на каждом show (рестарт-петля).
+# restart <unit> — новый PID юнита. Файл CRASH в рабочей копии — рестарт-петля всех юнитов,
+# CRASH_<unit> — только этого юнита: PID меняется на каждом show.
 st="$FAKE_STATE"
 case "$1" in
-  restart) echo restart >> "$st/calls"; echo $(( $(cat "$st/pid" 2>/dev/null || echo 100) + 1 )) > "$st/pid" ;;
+  restart)
+    echo "restart $2" >> "$st/calls"
+    echo $(( $(cat "$st/pid.$2" 2>/dev/null || echo 100) + 1 )) > "$st/pid.$2" ;;
   is-active) echo active ;;
   show)
-    if [ -e "$FLIGHT_BOT_DIR/CRASH" ]; then echo $(( $(cat "$st/pid") + 1 )) > "$st/pid"; fi
-    cat "$st/pid" ;;
+    unit="${@: -1}"
+    if [ -e "$FLIGHT_BOT_DIR/CRASH" ] || [ -e "$FLIGHT_BOT_DIR/CRASH_$unit" ]; then
+      echo $(( $(cat "$st/pid.$unit" 2>/dev/null || echo 100) + 1 )) > "$st/pid.$unit"
+    fi
+    cat "$st/pid.$unit" 2>/dev/null || echo 100 ;;
 esac
 """
 FAKE_SUDO = """#!/usr/bin/env bash
@@ -71,7 +77,6 @@ def env(tmp_path, monkeypatch):
     _exe(fakebin / "sudo", FAKE_SUDO)
     state = tmp_path / "state"
     state.mkdir()
-    (state / "pid").write_text("100\n")
     return {"work": work, "server": server, "state": state, "first": first,
             "env": {**os.environ, "PATH": f"{fakebin}:{os.environ['PATH']}",
                     "FLIGHT_BOT_DIR": str(server), "FAKE_STATE": str(state), "SMOKE_SEC": "1", "SMOKE_SETTLE_SEC": "0",
@@ -103,7 +108,7 @@ def test_deploys_main_commit_and_restarts(env):
     r = _deploy(env, sha)
     assert r.returncode == 0, r.stderr
     assert _head(env) == sha
-    assert _calls(env, "calls") == ["restart"]
+    assert _calls(env, "calls") == ["restart flight-bot", "restart flight-bot-api"]
     assert _calls(env, "pip") == []                 # requirements.txt не менялся
 
 
@@ -139,7 +144,7 @@ def test_rolls_back_when_service_keeps_restarting(env):
     assert r.returncode == 1
     assert _head(env) == env["first"]               # откат на прежний коммит
     assert not (env["server"] / "CRASH").exists()
-    assert _calls(env, "calls") == ["restart", "restart"]
+    assert _calls(env, "calls") == ["restart flight-bot", "restart flight-bot-api"] * 2
 
 
 def test_already_deployed_commit_is_noop(env):
@@ -149,7 +154,7 @@ def test_already_deployed_commit_is_noop(env):
     r = _deploy(env, old)                           # запоздавший запуск со старым коммитом
     assert r.returncode == 0, r.stderr
     assert _head(env) == new
-    assert _calls(env, "calls") == ["restart"]
+    assert _calls(env, "calls") == ["restart flight-bot", "restart flight-bot-api"]
 
 
 def test_refuses_local_changes_on_server(env):
@@ -160,3 +165,12 @@ def test_refuses_local_changes_on_server(env):
     assert _head(env) == env["first"]
     assert (env["server"] / "requirements.txt").read_text() == "hand-edited\n"
     assert _calls(env, "calls") == []
+
+
+def test_rolls_back_when_api_keeps_restarting(env):
+    sha = _push(env, "CRASH_flight-bot-api", "boom\n")
+    r = _deploy(env, sha)
+    assert r.returncode == 1
+    assert _head(env) == env["first"]
+    assert not (env["server"] / "CRASH_flight-bot-api").exists()
+    assert _calls(env, "calls") == ["restart flight-bot", "restart flight-bot-api"] * 2
